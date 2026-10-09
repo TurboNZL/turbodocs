@@ -1,7 +1,8 @@
 """Optional custom window decorations: a themed title bar (caption buttons, drag, double-click maximise) that
 follows the interface style, plus the helpers the main window needs to resize a frameless window."""
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import (QColor, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+                           QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QAbstractButton, QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from . import theme
@@ -26,10 +27,12 @@ def spec_for(kind, c, light, acc, on_accent) -> dict:
         base.update(h=30, hover="#e5e5e5" if light else "#333333", press="#cccccc" if light else "#4d4d4d",
                     close="#e81123", close_press="#f1707a", frame=acc)
     elif kind == "aero":
-        base.update(bg=[(0, "#dce9f8"), (.5, "#c3d6ee"), (.51, "#b9cfe9"), (1, "#c9dbf1")] if light else
+        base.update(bg=[(0, "#d6e5f7"), (.5, "#c3d8f1"), (1, "#b5cdeb")] if light else
                     [(0, theme.mix(c["chrome"], "#ffffff", .12)), (1, c["chrome"])],
-                    fg="#1e1e1e" if light else c["text"], h=30, btn_w=28, btn_h=19, btn="aero", inline_menu=False,
-                    frame="#5c7ba6" if light else c["border"], frame_fill="#b4cce8" if light else c["chrome"],
+                    fg="#000000" if light else c["text"], h=28, edge=7, btn_w=0, btn_h=20, btn="aero7",
+                    inline_menu=False, frame="#3b4f6b" if light else c["border"],
+                    frame_fill="#b5cdeb" if light else c["chrome"], frame_hi="#e9f2fc" if light else None,
+                    client_border="#6a7d99" if light else None, shine=light, glow=light,
                     close="#c9372c", close_press="#a82a20")
     elif kind == "xp":
         base.update(bg=[(0, "#0997ff"), (.08, "#0058ee"), (.4, "#0050d6"), (.9, "#0049c9"), (1, "#003dd7")],
@@ -85,6 +88,8 @@ class CaptionButton(QAbstractButton):
         bw, bh = spec["btn_w"], spec["btn_h"] or spec["h"]
         if spec["btn"] in ("mac", "round"):
             bw = bh = spec["btn_w"]
+        elif spec["btn"] == "aero7":
+            bw, bh = {MIN: 29, MAX: 27, CLOSE: 47}[self.role], spec["btn_h"]
         self.setFixedSize(bw, bh)
         self.update()
 
@@ -127,6 +132,8 @@ class CaptionButton(QAbstractButton):
             elif not self.window().isActiveWindow():
                 fg = QColor(s["fg_dim"])
             self._glyph(p, r, fg, thin=True)
+        elif kind == "aero7":
+            self._paint_aero7(p, r, down, hv, close)
         elif kind == "aero":
             rr = r.adjusted(1, 1, -1, -1)
             col = ("#e8a39c", "#c9372c") if close else ("#f5f9fd", "#b9d3ee")
@@ -195,6 +202,80 @@ class CaptionButton(QAbstractButton):
                 self._glyph(p, QRectF(.5, .5, d, d).adjusted(2, 2, -2, -2), QColor(0, 0, 0, 150), thin=True, small=True)
         p.end()
 
+    def _paint_aero7(self, p, r, down, hv, close):
+        """Windows 7 glass caption buttons: a joined group hanging from the top edge (min | max | close)."""
+        active = self.window().isActiveWindow()
+        rad = 5.0
+        path = QPainterPath()
+        rr = r.adjusted(0.5, -1, -0.5, -0.5)          # top edge is clipped: the group hangs from the frame
+        left = self.role == MIN
+        right = self.role == CLOSE
+        x0, y0, x1, y1 = rr.left(), rr.top(), rr.right(), rr.bottom()
+        path.moveTo(x0, y0)
+        path.lineTo(x1, y0)
+        path.lineTo(x1, y1 - (rad if right else 0))
+        if right:
+            path.quadTo(x1, y1, x1 - rad, y1)
+        else:
+            path.lineTo(x1, y1)
+        path.lineTo(x0 + (rad if left else 0), y1)
+        if left:
+            path.quadTo(x0, y1, x0, y1 - rad)
+        else:
+            path.lineTo(x0, y1)
+        path.closeSubpath()
+        if close:
+            stops = ([(0, "#f0b9ac"), (.48, "#e68a76"), (.5, "#d2503b"), (1, "#e27a60")] if hv < .5 and not down else
+                     [(0, "#f9c3b6"), (.48, "#f08a72"), (.5, "#e5412a"), (1, "#f9805f")])
+            if down:
+                stops = [(0, "#c9685a"), (.48, "#b64233"), (.5, "#992314"), (1, "#c2503c")]
+            if not active and not hv:
+                stops = [(0, "#e7d2cd"), (.5, "#d5b3ab"), (.51, "#c99b90"), (1, "#d6b0a6")]
+            edge = QColor("#5b1b12")
+        else:
+            glass = [(0, "#eef5fc"), (.48, "#cfe0f3"), (.5, "#a9c5e8"), (1, "#c5d9f0")]
+            lit = [(0, "#f5fbff"), (.48, "#d9eeff"), (.5, "#9ed0fa"), (1, "#c3e7ff")]
+            if down:
+                stops = [(0, "#a9cdee"), (.48, "#8fbbe6"), (.5, "#6aa3dc"), (1, "#8fc0ec")]
+            else:
+                stops = [(po, theme.lerp_color(a_, b_, hv).name()) for (po, a_), (_, b_) in zip(glass, lit)]
+            edge = QColor("#3f5373")
+        g = QLinearGradient(rr.topLeft(), rr.bottomLeft())
+        for pos, col in stops:
+            g.setColorAt(pos, QColor(col))
+        p.setBrush(g)
+        p.setPen(QPen(edge, 1))
+        p.drawPath(path)
+        # inner highlight + hover glow
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 150), 1))
+        p.drawPath(path)
+        if hv > 0 and not down:
+            glow = QRadialGradient(QPointF(rr.center().x(), rr.bottom()), rr.width() * .75)
+            glow.setColorAt(0, QColor(255, 250, 200, int(170 * hv)) if close else QColor(150, 220, 255, int(190 * hv)))
+            glow.setColorAt(1, QColor(255, 255, 255, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(glow)
+            p.drawPath(path)
+        # glyph: white with a dark outline, like the real caption glyphs
+        c = rr.center()
+        x, y, k = round(c.x()) + .5, round(c.y()) + .5 + (1 if close else 0), 4.5 if close else 4.0
+        for pen in (QPen(QColor(20, 30, 50, 190), 3.2 if close else 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap),
+                    QPen(QColor("#ffffff"), 1.6 if close else 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)):
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            if self.role == MIN:
+                p.drawLine(QPointF(x - 3.5, y + 3), QPointF(x + 3.5, y + 3))
+            elif self.role == MAX:
+                if self._maximised:
+                    p.drawRect(QRectF(x - 4, y - 1, 6, 5))
+                    p.drawPolyline([QPointF(x - 2, y - 1), QPointF(x - 2, y - 4), QPointF(x + 4, y - 4), QPointF(x + 4, y + 2), QPointF(x + 2, y + 2)])
+                else:
+                    p.drawRect(QRectF(x - 4, y - 3.5, 8, 7))
+            else:
+                p.drawLine(QPointF(x - k + .5, y - k + .5), QPointF(x + k - .5, y + k - .5))
+                p.drawLine(QPointF(x - k + .5, y + k - .5), QPointF(x + k - .5, y - k + .5))
+
     def _glyph(self, p, rect, fg, thin=True, small=False):
         c = rect.center()
         k = 5.0 if thin and not small else (3.2 if small else (4.0 if self.spec["btn"] != "bevel" else 3.5))
@@ -238,6 +319,30 @@ class MacGroup(QWidget):
             b.update()
 
 
+class GlowLabel(QLabel):
+    """Title text with the soft white halo Windows 7 draws behind caption text on glass."""
+    glow = False
+
+    def paintEvent(self, e):
+        if not self.glow:
+            super().paintEvent(e)
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        flags = int(self.alignment()) | int(Qt.TextFlag.TextSingleLine)
+        r = self.rect().adjusted(0, 0, -2, 0)
+        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, r.width() - 8)
+        p.setFont(self.font())
+        p.setPen(QColor(255, 255, 255, 26))
+        for dx in range(-4, 5):
+            for dy in range(-3, 4):
+                if dx * dx + dy * dy <= 20:
+                    p.drawText(r.translated(dx, dy), flags, text)
+        p.setPen(QColor("#000000"))
+        p.drawText(r, flags, text)
+        p.end()
+
+
 class TopBar(QWidget):
     """Title row (icon, title, caption buttons) with the menu bar either inline or on a second row."""
 
@@ -250,7 +355,7 @@ class TopBar(QWidget):
         self.icon = QLabel()
         self.icon.setFixedSize(16, 16)
         self.icon.setScaledContents(True)
-        self.title = QLabel()
+        self.title = GlowLabel()
         self.title.setObjectName("TitleText")
         self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.buttons = {r: CaptionButton(r) for r in (MIN, MAX, CLOSE)}
@@ -285,6 +390,8 @@ class TopBar(QWidget):
             f.setPointSizeF(max(8.0, f.pointSizeF() * (0.95 if spec["layout"] == "win" else 1.0)))
             self.title.setFont(f)
             self.title.setStyleSheet(f"color: {spec['fg']}; background: transparent;")
+            self.title.glow = bool(spec.get("glow"))
+            self.title.update()
         self.updateGeometry()
 
     def _clear(self):
@@ -310,7 +417,8 @@ class TopBar(QWidget):
         h = s["h"]
         lay = self.btn_lay
         lay.setContentsMargins(0, 0, 6 if s["layout"] != "win" else 0, 0)
-        lay.setSpacing({"mac": 8, "round": 6}.get(s["layout"], 2 if s["btn"] in ("xp", "bevel", "aero") else 0))
+        lay.setSpacing({"mac": 8, "round": 6}.get(s["layout"], 2 if s["btn"] in ("xp", "bevel", "aero") else
+                                                  -1 if s["btn"] == "aero7" else 0))
         order = (CLOSE, MIN, MAX) if s["layout"] == "mac" else (MIN, MAX, CLOSE)
         for r in order:
             lay.addWidget(self.buttons[r])
@@ -319,6 +427,10 @@ class TopBar(QWidget):
             lay.setContentsMargins(12, 0, 0, 0)
         elif s["btn"] in ("xp", "bevel", "aero"):
             lay.setContentsMargins(0, 0, 4, 0)
+        elif s["btn"] == "aero7":
+            lay.setContentsMargins(0, 1, 6, 0)
+            for b in self.buttons.values():
+                lay.setAlignment(b, Qt.AlignmentFlag.AlignTop)
         self.btn_box.setFixedHeight(h)
         title_row_h = h
         inline = s["inline_menu"] and s["layout"] == "win"
@@ -354,6 +466,25 @@ class TopBar(QWidget):
         self.icon.setContentsMargins(0, 0, 0, 0)
         self.grid.setColumnMinimumWidth(0, 28)
         self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if not (self.custom and self.spec.get("shine")) or self.win.isFullScreen():
+            return
+        # Aero glass: two soft diagonal reflections across the caption area
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.spec["h"] + self.win.contentsMargins().top()
+        p.setPen(Qt.PenStyle.NoPen)
+        for x0, x1, a in ((.18, .42, 46), (.56, .66, 30)):
+            g = QLinearGradient(0, 0, 0, h)
+            g.setColorAt(0, QColor(255, 255, 255, a))
+            g.setColorAt(1, QColor(255, 255, 255, 4))
+            p.setBrush(g)
+            p.drawPolygon(QPolygonF([QPointF(w * x0, 0), QPointF(w * x1, 0), QPointF(w * (x1 - .12), h), QPointF(w * (x0 - .12), h)]))
+        p.setPen(QColor(255, 255, 255, 110))
+        p.drawLine(0, 0, w, 0)
+        p.end()
 
     def set_title(self, text):
         self.title.setText(text)

@@ -1349,8 +1349,14 @@ class MainWindow(QMainWindow):
             p.fillRect(self.rect(), QColor(tb["frame_fill"]))
             p.fillRect(self.rect().adjusted(edge, edge, -edge, -edge), QColor(theme.cur["chrome"]))
         if not self.isMaximized():
+            if tb.get("frame_hi"):      # glass frames have a light inner edge
+                p.setPen(QColor(255, 255, 255, 140))
+                p.drawRect(self.rect().adjusted(1, 1, -2, -2))
             p.setPen(QColor(tb["frame"]))
             p.drawRect(self.rect().adjusted(0, 0, -1, -1))
+            if tb.get("client_border") and edge > 1:
+                p.setPen(QColor(tb["client_border"]))
+                p.drawRect(self.rect().adjusted(edge - 1, edge + self.topbar.height() - 1, -edge, -edge))
         p.end()
 
     def changeEvent(self, e):

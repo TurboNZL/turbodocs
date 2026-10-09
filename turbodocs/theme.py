@@ -29,7 +29,7 @@ PRESETS = {
     "Ayu Mirage": P(True, "#1f2430", "#232834", "#2d3343", "#383f52", "#2b3040", "#cccac2", "#707a8c", "#ffcc66", "#34455a", ["IBM Plex Sans", "Noto Sans"], ["IBM Plex Sans", "Carlito"]),
     "Solarized Dark": P(True, "#002b36", "#073642", "#0b3f4c", "#124a58", "#0f4452", "#a9b6b8", "#657b83", "#2aa198", "#1b5563", ["Fira Sans", "Noto Sans"], ["Fira Sans", "Carlito"]),
     "Breeze Dark": P(True, "#232629", "#31363b", "#3b4045", "#475057", "#4d4d4d", "#eff0f1", "#a1a9b1", "#3daee9", "#1f5f80", ["Noto Sans", "DejaVu Sans"], ["Noto Sans", "Carlito"]),
-    "Adwaita Dark": P(True, "#1e1e1e", "#303030", "#3a3a3a", "#454545", "#3d3d3d", "#eeeeee", "#9a9996", "#78aeed", "#1c4d85", ["Cantarell", "Noto Sans"], ["Cantarell", "Noto Sans"]),
+    "Adwaita Dark": P(True, "#1e1e1e", "#303030", "#3a3a3a", "#454545", "#3d3d3d", "#eeeeee", "#9a9996", "#78aeed", "#1c4d85", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
     "Windows 10 Dark": P(True, "#1e1e1e", "#2b2b2b", "#333333", "#3f3f3f", "#555555", "#f0f0f0", "#9a9a9a", "#0078d7", "#264f78", ["Segoe UI", "Open Sans", "Noto Sans"], ["Calibri", "Carlito"]),
     "Windows 11 Dark": P(True, "#202020", "#2c2c2c", "#343434", "#3d3d3d", "#3c3c3c", "#ffffff", "#b4b4b4", "#60cdff", "#0b4a6f", ["Segoe UI Variable", "Segoe UI", "Inter", "Noto Sans"], ["Aptos", "Calibri", "Carlito"]),
     "macOS Dark": P(True, "#1e1e1e", "#2a2a2c", "#3a3a3c", "#48484a", "#38383a", "#f5f5f7", "#98989d", "#0a84ff", "#1e4f8c", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
@@ -40,7 +40,7 @@ PRESETS = {
     "Sepia": P(False, "#f6efdf", "#ece3cf", "#e2d8c2", "#d9ceb5", "#d6cab0", "#3b3326", "#857a66", "#b5651d", "#e3c79a", ["Fira Sans", "Noto Sans"], ["Lora", "Noto Serif", "DejaVu Serif"]),
     "Solarized Light": P(False, "#fdf6e3", "#eee8d5", "#e6dfc8", "#ddd6c0", "#d6cfb8", "#586e75", "#93a1a1", "#268bd2", "#d3e6e7", ["Fira Sans", "Noto Sans"], ["Fira Sans", "Carlito"]),
     "Breeze Light": P(False, "#fcfcfc", "#eff0f1", "#e3e5e7", "#d5d8db", "#bdc3c7", "#232627", "#6e7377", "#3daee9", "#b6def4", ["Noto Sans", "DejaVu Sans"], ["Noto Sans", "Carlito"]),
-    "Adwaita Light": P(False, "#ffffff", "#ebebeb", "#e1e1e1", "#d6d6d6", "#d8d8d8", "#2e2e2e", "#77767b", "#3584e4", "#c1d9f6", ["Cantarell", "Noto Sans"], ["Cantarell", "Noto Sans"]),
+    "Adwaita Light": P(False, "#ffffff", "#ebebeb", "#e1e1e1", "#d6d6d6", "#d8d8d8", "#2e2e2e", "#77767b", "#3584e4", "#c1d9f6", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
     "macOS Light": P(False, "#ffffff", "#f2f2f2", "#ffffff", "#e5e5e5", "#d1d1d1", "#1d1d1f", "#86868b", "#007aff", "#b3d7ff", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
     "Windows XP Luna": P(False, "#ffffff", "#ece9d8", "#f1efe2", "#fff3d0", "#aca899", "#000000", "#716f64", "#316ac5", "#316ac5", ["Tahoma", "Verdana", "DejaVu Sans"], ["Liberation Serif", "Times New Roman"], "#ffffff"),
     "Windows 7 Aero": P(False, "#ffffff", "#e4ecf7", "#f3f6fb", "#dbe8fb", "#a0b4cc", "#1e1e1e", "#6d7b8d", "#3399ff", "#cde4fb", ["Segoe UI", "Open Sans", "Noto Sans"], ["Calibri", "Carlito"]),
@@ -236,21 +236,36 @@ def _assets(c, on_accent, tick_col) -> dict:
     )
 
 
+_applied_key = None
+
+
 def apply(app, name=DEFAULT_THEME, accent="", ui_size=10, ui_family="", iface=DEFAULT_IFACE):
-    global cur, fx
+    """Apply colours, fonts and the widget stylesheet. Restyling the whole app is the slowest thing the program
+    does, so an unchanged appearance is a no-op."""
+    global cur, fx, _applied_key
+    key = (name, accent, int(ui_size), ui_family, iface)
+    if key == _applied_key:
+        return
+    _applied_key = key
     load_bundled_fonts()
     base = PRESETS.get(name, PRESETS[DEFAULT_THEME])
     cur = dict(base, name=name)
     if accent and QColor(accent).isValid():
         cur["accent"] = accent
         cur["selection"] = mix(cur["bg"], accent, 0.35)
+        if name == "Retro Terminal":    # a phosphor screen: every colour is a shade of the accent
+            bg = cur["bg"]
+            cur.update(chrome=mix(bg, accent, .05), raised=mix(bg, accent, .10), hover=mix(bg, accent, .18),
+                       border=mix(bg, accent, .30), text=accent, muted=mix(bg, accent, .62),
+                       selection=mix(bg, accent, .32), sel_text=mix(accent, "#ffffff", .55))
     c = cur
     m = IFACES.get(iface, IFACES[DEFAULT_IFACE])
     cur["iface"] = m["kind"] if m else "fusion"
     family = ui_family or first_available(c["ui"], app.font().family())
     if m and m["mono"] and not ui_family:
         family = first_available(MONO, family)
-    app.setStyle("Fusion")
+    if app.style().name().lower() != "fusion":   # setStyle() re-polishes every widget, even for the same style
+        app.setStyle("Fusion")
     app.setFont(QFont(family, int(ui_size)))
     sel_text = c.get("sel_text") or ("#ffffff" if c["dark"] else "#000000")
     pal = QPalette()
@@ -276,6 +291,29 @@ def apply(app, name=DEFAULT_THEME, accent="", ui_size=10, ui_family="", iface=DE
         return
     qss, fx = build_qss(c, dis, m, on_accent, sel_text)
     app.setStyleSheet(qss)
+
+
+def _aero_assets() -> dict:
+    """Small SVGs for the Windows 7 look: scroll arrows, grippers, check mark and radio dot."""
+    d = _asset_dir()
+
+    def write(name, body, w=16, h=16):
+        p = d / name
+        p.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">{body}</svg>')
+        return p.as_posix()
+    tri = lambda pts: f'<polygon points="{pts}" fill="#4d6082"/>'  # noqa: E731
+    grip = lambda vertical: "".join(  # noqa: E731
+        (f'<line x1="{x}" y1="3" x2="{x}" y2="10" stroke="#8e8f8f"/><line x1="{x + 1}" y1="3" x2="{x + 1}" y2="10" stroke="#ffffff"/>'
+         if vertical else
+         f'<line x1="3" y1="{x}" x2="10" y2="{x}" stroke="#8e8f8f"/><line x1="3" y1="{x + 1}" x2="10" y2="{x + 1}" stroke="#ffffff"/>')
+        for x in (4, 6, 8))
+    return dict(
+        up=write("aero-up.svg", tri("4,10 8,5 12,10")), down=write("aero-down.svg", tri("4,6 8,11 12,6")),
+        left=write("aero-left.svg", tri("10,4 5,8 10,12")), right=write("aero-right.svg", tri("6,4 11,8 6,12")),
+        grip_v=write("aero-gripv.svg", grip(True), 13, 13), grip_h=write("aero-griph.svg", grip(False), 13, 13),
+        tick=write("aero-tick.svg", '<path d="M2.6 6.8 5.2 9.4 10.6 3.2" fill="none" stroke="#21433f" stroke-width="2" '
+                   'stroke-linecap="round" stroke-linejoin="round"/>', 13, 13),
+        rdot=write("aero-rdot.svg", '<circle cx="6.5" cy="6.5" r="2.6" fill="#21433f"/>', 13, 13))
 
 
 def _glass(base, light):
@@ -347,7 +385,11 @@ def build_qss(c, dis, m, on_accent, sel_text):
             push, push_h, push_p = _glass(field, False), _glass(mix(field, acc, .3), False), _glass(mix(field, acc, .45), False)
             tool_h, tool_p = _glass(c["hover"], False), _glass(mix(c["hover"], acc, .4), False)
             tool_b, tool_bh = clear(line), line
-        menubar_bg = toolbar_bg = _glass(c["chrome"], light)
+        if light:   # Explorer-style: menu bar fades from white, tool bar is a smooth blue-grey gradient
+            menubar_bg = [(0, "#fcfdfe"), (1, "#eef2f9")]
+            toolbar_bg = [(0, "#f6f9fd"), (.5, "#e9eff8"), (1, "#d9e3f1")]
+        else:
+            menubar_bg = toolbar_bg = _glass(c["chrome"], light)
         status_bg = [(0, mix(c["chrome"], "#ffffff", .45 if light else .06)), (1, mix(c["chrome"], "#000000", .04))]
         field_bg = c["bg"]
         fb = "#abadb3" if light else line
@@ -371,6 +413,55 @@ QScrollBar::handle:horizontal:hover {{ background: {fill_css([(0, '#eaf6fd'), (.
 QPushButton:default {{ border: 1px solid #3c7fb1; background: {fill_css([(0, '#eaf6fd'), (.5, '#d3ecfb'), (.51, '#b4e0fa'), (1, '#c4e9fc')])}; color: {c['text']}; }}
 QSlider::groove:horizontal {{ height: 4px; background: #c9d3de; border: 1px solid #98a8ba; border-radius: 3px; }}
 QSlider::handle:horizontal {{ background: {fill_css(push)}; border: 1px solid #707070; width: 12px; height: 12px; margin: -5px 0; border-radius: 6px; }}
+"""
+        if light:
+            ar = _aero_assets()
+            extra += f"""
+QMenuBar::item {{ padding: 4px 9px; border: 1px solid transparent; border-radius: 3px; }}
+QMenuBar::item:selected {{ background: {fill_css([(0, '#fafcfe'), (.5, '#e9f3fc'), (.51, '#d5e8f8'), (1, '#e0eefb')])}; border-color: #aed0ea; }}
+QMenuBar::item:pressed {{ background: {fill_css([(0, '#e3effa'), (1, '#c7dff3')])}; border-color: #98b8d8; }}
+QToolBar {{ border-bottom: 1px solid #b8c7da; }}
+QToolButton {{ border-radius: 3px; }}
+QToolButton:hover {{ border: 1px solid #98b8d8; }}
+QToolButton:pressed, QToolButton:checked {{ border: 1px solid #6d9fc7; background: {fill_css([(0, '#d3e8f8'), (.5, '#bcdcf3'), (.51, '#9ccaec'), (1, '#a9d3f0')])}; }}
+QToolButton:checked:hover {{ background: {fill_css([(0, '#c3dff4'), (.5, '#a9d3f0'), (.51, '#8ac0e6'), (1, '#9bcbea')])}; }}
+QPushButton:disabled, QComboBox:disabled {{ background: #f4f4f4; border-color: #adb2b5; color: #838383; }}
+QPushButton:pressed {{ border-color: #2c628b; }}
+QPushButton:default {{ border: 1px solid #3c7fb1; }}
+QPushButton:default:hover {{ border-color: #2f7cae; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{ border: 1px solid #abadb3; border-top-color: #e2e3ea; border-radius: 2px; }}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {{ border-color: #7eb4ea #5794bf #5794bf #5794bf; }}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: #7eb4ea #3d7bad #3d7bad #3d7bad; }}
+QComboBox {{ padding: 2px 6px; }}
+QComboBox::drop-down {{ border: none; width: 18px; }}
+QGroupBox {{ border: 1px solid #d5dfe5; border-radius: 4px; }}
+QToolTip {{ background: #f1f2f7; color: #575757; border: 1px solid #767676; border-radius: 0; padding: 3px 5px; }}
+QCheckBox::indicator, QRadioButton::indicator {{ width: 13px; height: 13px; border: 1px solid #8e8f8f; border-radius: 2px;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #dedede,stop:.35 #ffffff,stop:1 #ffffff); }}
+QRadioButton::indicator {{ border-radius: 7px; }}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: #3c7fb1; background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #b7dff5,stop:.4 #e3f4fc,stop:1 #ffffff); }}
+QCheckBox::indicator:pressed, QRadioButton::indicator:pressed {{ border-color: #2c628b; background: #c2e3f6; }}
+QCheckBox::indicator:checked {{ image: url({ar['tick']}); background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #dedede,stop:.35 #ffffff,stop:1 #ffffff); border-color: #8e8f8f; }}
+QRadioButton::indicator:checked {{ image: url({ar['rdot']}); background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #dedede,stop:.35 #ffffff,stop:1 #ffffff); border-color: #8e8f8f; }}
+QCheckBox::indicator:checked:hover, QRadioButton::indicator:checked:hover {{ border-color: #3c7fb1; }}
+QScrollBar:vertical {{ width: 17px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #e6e6e6,stop:.5 #f2f2f2,stop:1 #f9f9f9); border-left: 1px solid #e4e4e4; margin: 17px 0; }}
+QScrollBar:horizontal {{ height: 17px; background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e6e6e6,stop:.5 #f2f2f2,stop:1 #f9f9f9); border-top: 1px solid #e4e4e4; margin: 0 17px; }}
+QScrollBar::handle:vertical {{ margin: 0 1px; border-radius: 2px; min-height: 28px; image: url({ar['grip_v']}); }}
+QScrollBar::handle:horizontal {{ margin: 1px 0; border-radius: 2px; min-width: 28px; image: url({ar['grip_h']}); }}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ border-color: #3c7fb1; }}
+QScrollBar::handle:vertical:pressed, QScrollBar::handle:horizontal:pressed {{ border-color: #2c628b; background: {fill_css([(0, '#c2e4f6'), (.5, '#a5d6f1'), (.51, '#7fc3e8'), (1, '#68b3db')])}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 17px; width: 17px; subcontrol-origin: margin; background: {fill_css([(0, '#f4f4f4'), (.5, '#e8e8e8'), (.51, '#dadada'), (1, '#e9e9e9')])}; border: 1px solid #a6a6a6; border-radius: 2px; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ height: 17px; width: 17px; subcontrol-origin: margin; background: {fill_css([(0, '#f4f4f4'), (.5, '#e8e8e8'), (.51, '#dadada'), (1, '#e9e9e9')])}; border: 1px solid #a6a6a6; border-radius: 2px; }}
+QScrollBar::sub-line:vertical {{ subcontrol-position: top; image: url({ar['up']}); }}
+QScrollBar::add-line:vertical {{ subcontrol-position: bottom; image: url({ar['down']}); }}
+QScrollBar::sub-line:horizontal {{ subcontrol-position: left; image: url({ar['left']}); }}
+QScrollBar::add-line:horizontal {{ subcontrol-position: right; image: url({ar['right']}); }}
+QScrollBar::sub-line:hover, QScrollBar::add-line:hover {{ background: {fill_css([(0, '#eaf6fd'), (.5, '#d9f0fc'), (.51, '#bee6fd'), (1, '#a7d9f5')])}; border-color: #3c7fb1; }}
+QSlider::groove:horizontal {{ height: 4px; background: #d6d6d6; border: 1px solid #a6a6a6; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: #d6d6d6; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: {fill_css([(0, '#f7f7f7'), (.5, '#ebebeb'), (.51, '#dcdcdc'), (1, '#d0d0d0')])}; border: 1px solid #707070; width: 9px; height: 18px; margin: -8px 0; border-radius: 2px; }}
+QSlider::handle:horizontal:hover {{ background: {fill_css([(0, '#eaf6fd'), (.5, '#d9f0fc'), (.51, '#bee6fd'), (1, '#a7d9f5')])}; border-color: #3c7fb1; }}
+#Popup, #Floating, #FindBar, #ImageBar {{ border: 1px solid #8a9bb3; border-radius: 4px; }}
 """
     elif kind == "xp":
         if light:

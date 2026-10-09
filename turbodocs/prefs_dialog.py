@@ -2,7 +2,7 @@
 import json
 from dataclasses import fields
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                                QFileDialog, QFontComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -103,9 +103,9 @@ class PrefsDialog(QDialog):
         self.nav.setCurrentRow(0)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
                               | QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.RestoreDefaults)
-        bb.accepted.connect(lambda: (self.save(), self.accept()))
+        bb.accepted.connect(self._ok)
         bb.rejected.connect(self.reject)
-        bb.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.save)
+        bb.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(lambda: self.save())
         bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self._restore)
         root.addWidget(bb)
 
@@ -315,7 +315,13 @@ class PrefsDialog(QDialog):
             self._paint_accent()
 
     # ---- apply
-    def save(self):
+    def _ok(self):
+        """Close first, then apply: restyling the whole app takes a moment and shouldn't hold the dialog open."""
+        self.save(emit=False)
+        self.accept()
+        QTimer.singleShot(30, prefs.changed.emit)
+
+    def save(self, emit=True):
         s = prefs
         s.set("backup_ms", self.backup_s.value() * 1000, False)
         s.set("show_wordcount", self.show_wc.isChecked(), False)
@@ -343,7 +349,8 @@ class PrefsDialog(QDialog):
         s.set("smooth_scroll", self.smooth.isChecked(), False)
         s.set("custom_titlebar", self.custom_tb.isChecked(), False)
         s.set("styles_json", json.dumps(self._style_overrides()), False)
-        s.changed.emit()
+        if emit:
+            s.changed.emit()
 
     def _style_overrides(self):
         factory, out = styles.factory_defs(), {}
