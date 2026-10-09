@@ -245,6 +245,7 @@ class TopBar(QWidget):
         super().__init__(win)
         self.setObjectName("TopBar")
         self.win, self.menubar = win, menubar
+        menubar.setParent(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.icon = QLabel()
         self.icon.setFixedSize(16, 16)

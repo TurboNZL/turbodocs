@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self.md_native = False
         self.struct_dirty = False
         self._custom = False
+        self._menus = []
         self.backup = backup.Backup()
         self.styles = styles.DocStyles()
         self.tabs: list[Tab] = []
@@ -300,15 +301,23 @@ class MainWindow(QMainWindow):
                              self.a_line_custom, self.a_space_before, self.a_space_after, self.a_space_none,
                              *self.aligns.values(), *self.line_actions, *self.style_actions.values()]
 
+    def _menu(self, parent, title):
+        """A menu parented to its bar/menu and referenced from self (PySide's addMenu(str) wrapper can be
+        garbage-collected together with the C++ menu)."""
+        menu = QMenu(title, parent)
+        parent.addMenu(menu)
+        self._menus.append(menu)
+        return menu
+
     def _build_menus(self):
-        mb = QMenuBar()
+        mb = self.menubar = QMenuBar()   # kept on self: a local would let Python free the bar (and its menus)
         self.topbar = TopBar(self, mb)
         self.setMenuWidget(self.topbar)
         self.windowTitleChanged.connect(self.topbar.set_title)
         self.topbar.set_icon(QApplication.windowIcon())
-        m = mb.addMenu("&File")
+        m = self._menu(mb, "&File")
         m.addActions([self.a_home, self.a_new, self.a_new_md, self.a_open])
-        self.recent_menu = m.addMenu("Open recent")
+        self.recent_menu = self._menu(m, "Open recent")
         self.recent_menu.aboutToShow.connect(self._fill_recent)
         m.addSeparator()
         m.addActions([self.a_save, self.a_saveas])
@@ -318,7 +327,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.a_prefs)
         m.addAction(self.a_quit)
 
-        m = mb.addMenu("&Edit")
+        m = self._menu(mb, "&Edit")
         m.addActions([self.a_undo, self.a_redo])
         m.addSeparator()
         m.addActions([self.a_cut, self.a_copy, self.a_paste, self.a_paste_plain])
@@ -327,33 +336,33 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions([self.a_find, self.a_replace])
 
-        m = mb.addMenu("&View")
+        m = self._menu(mb, "&View")
         m.addActions([self.a_md, self.a_tabs, self.a_width])
         m.addSeparator()
         m.addActions([self.a_zoom_in, self.a_zoom_out, self.a_zoom_reset])
         m.addSeparator()
         m.addAction(self.a_full)
 
-        m = mb.addMenu("&Insert")
+        m = self._menu(mb, "&Insert")
         m.addActions([self.a_image, self.a_table, self.a_link, self.a_emoji, self.a_date])
 
-        self.format_menu = m = mb.addMenu("F&ormat")
-        t = m.addMenu("Text")
+        self.format_menu = m = self._menu(mb, "F&ormat")
+        t = self._menu(m, "Text")
         t.addActions([self.a_bold, self.a_italic, self.a_underline, self.a_strike])
         t.addSeparator()
         t.addActions([self.a_text_color, self.a_hl_color])
         t.addActions([self.a_size_up, self.a_size_down])
         t.addSeparator()
         t.addAction(self.a_clear)
-        ps = m.addMenu("Paragraph styles")
+        ps = self._menu(m, "Paragraph styles")
         ps.addActions(list(self.style_actions.values()))
         ps.addSeparator()
         ps.addActions([self.a_update_style, self.a_reset_styles, self.a_save_styles])
-        al = m.addMenu("Align and indent")
+        al = self._menu(m, "Align and indent")
         al.addActions(list(self.aligns.values()))
         al.addSeparator()
         al.addActions([self.a_indent, self.a_outdent])
-        ls = m.addMenu("Line and paragraph spacing")
+        ls = self._menu(m, "Line and paragraph spacing")
         ls.addActions(self.line_actions)
         ls.addAction(self.a_line_custom)
         ls.addSeparator()
@@ -363,17 +372,17 @@ class MainWindow(QMainWindow):
         m.addActions([self.a_bullets, self.a_numbers])
         m.addSeparator()
         m.addAction(self.a_page_color)
-        im = m.addMenu("Image")
+        im = self._menu(m, "Image")
         im.addActions([self.a_crop, self.a_img_reset, self.a_img_orig])
-        tb = m.addMenu("Table")
+        tb = self._menu(m, "Table")
         tb.addActions([self.a_row_above, self.a_row_below, self.a_col_left, self.a_col_right])
         tb.addSeparator()
         tb.addActions([self.a_merge, self.a_split, self.a_cell_color])
         tb.addSeparator()
         tb.addActions([self.a_del_row, self.a_del_col, self.a_del_table])
-        self.rich_menus = [m, mb.actions()[3].menu()]  # Format, Insert
+        self.rich_menus = [m, self._menus[next(i for i, x in enumerate(self._menus) if x.title() == '&Insert')]]  # Format, Insert
 
-        m = mb.addMenu("&Tools")
+        m = self._menu(mb, "&Tools")
         m.addActions([self.a_wc, self.a_prefs])
 
     def _quick(self, action, glyph, tip, bold=False, italic=False, underline=False):
