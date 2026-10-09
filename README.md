@@ -15,6 +15,14 @@ entry and icon (so it appears in the application menu, and `.docx` files offer "
 
 Run from the source tree instead: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python main.py`
 
+## Install the .deb (Ubuntu / Kubuntu 26.04)
+
+Download `turbodocs_*_all.deb` from the Releases page, then:
+
+```bash
+sudo apt install ./turbodocs_1.0.0_all.deb
+```
+
 ## Highlights
 - **Pageless canvas**, ~760px centred column; width and left/right margins adjustable (Ctrl+Alt+W).
 - **Docx**: styles, fonts (incl. embedded), lists, links, highlights, tables (merged cells, column widths), images (size + crop), emoji.
@@ -32,3 +40,7 @@ Run from the source tree instead: `python3 -m venv .venv && .venv/bin/pip instal
 - **Themes**: 46 colour themes, each paired with its own font (fonts bundled, all OFL: Cantarell, Inter, Open Sans, Fira Sans, IBM Plex Sans, JetBrains Mono, Work Sans, Nunito, Lora, Source Sans 3, Space Grotesk), separate interface styles (Modern, Breeze, Rounded, GNOME, Windows 95/XP/7 Aero/8-10/11, Yaru, Terminal) and one-click presets. Styles animate like the originals (Aero glows and fades, Win11/GNOME ease, XP/95/Terminal are instant); animations and smooth scrolling can be turned off in Preferences. There is no Windows 9; Microsoft skipped it, so Windows 8 is included.
 - **Preferences** (Ctrl+,): accent colour, default highlight, document defaults, editing QoL (markdown shortcuts, smart quotes, emoji codes, paste-as-plain…).
 - Unsaved edits are backed up to `~/.local/share/TurboDocs/TurboDocs/backups` and offered for recovery after a crash.
+
+## Licence
+
+MIT — do what you like with it, modify it, share it. See `LICENSE`. Bundled fonts are under the SIL Open Font License (see `turbodocs/resources/fonts`).
