@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TurboDocs
+GenericName=Word Processor
+Comment=Pageless word processor with .docx support
+Exec=@EXEC@ %F
+Icon=turbodocs
+Terminal=false
+Categories=Office;WordProcessor;Qt;
+MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;text/markdown;text/plain;
+StartupWMClass=turbodocs
+StartupNotify=true
+Keywords=docx;word;document;writer;
