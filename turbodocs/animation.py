@@ -2,12 +2,18 @@
 editor scrolls smoothly. How long each takes comes from the interface style (theme.fx); XP, Windows 95 and
 Terminal are deliberately instant, like the originals."""
 from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, QVariantAnimation
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QDialog, QMenu, QPushButton, QToolButton, QWidget
 
 from . import theme
 from .prefs import prefs
 
 _SKIP = "nofx"
+
+
+def _window_opacity_ok() -> bool:
+    """Top-level fade-ins need windowOpacity, which Wayland (and offscreen) don't support: skip, don't spam warnings."""
+    return not QGuiApplication.platformName().startswith(("wayland", "offscreen", "minimal"))
 
 
 class Animator(QObject):
@@ -84,7 +90,7 @@ class Animator(QObject):
 
     def _fade_in(self, w):
         ms = theme.fx.get("fade", 0)
-        if not (ms and prefs.get("animations")):
+        if not (ms and prefs.get("animations")) or not _window_opacity_ok():
             return
         a = self._fades.get(w)
         if a is None:
