@@ -278,6 +278,9 @@ class PrefsDialog(QDialog):
         self.custom_tb = QCheckBox("Use TurboDocs window decorations (title bar and borders drawn in the theme)")
         self.custom_tb.setChecked(prefs.get("custom_titlebar"))
         f.addRow("Window", self.custom_tb)
+        self.translucent = QCheckBox("Frosted glass menus and panels for the Liquid Glass style")
+        self.translucent.setChecked(prefs.get("translucent"))
+        f.addRow("", self.translucent)
         self._paint_accent()
         self._update_font_note()
 
@@ -348,6 +351,7 @@ class PrefsDialog(QDialog):
         s.set("animations", self.anim.isChecked(), False)
         s.set("smooth_scroll", self.smooth.isChecked(), False)
         s.set("custom_titlebar", self.custom_tb.isChecked(), False)
+        s.set("translucent", self.translucent.isChecked(), False)
         s.set("styles_json", json.dumps(self._style_overrides()), False)
         if emit:
             s.changed.emit()

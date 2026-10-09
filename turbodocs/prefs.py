@@ -5,7 +5,7 @@ from PySide6.QtCore import QObject, QSettings, Signal
 
 DEFAULTS = {
     # appearance
-    "theme": "Graphite", "ui_style": "Modern", "animations": True, "smooth_scroll": True, "custom_titlebar": False, "accent": "", "highlight_color": "", "ui_size": 10, "ui_family": "",
+    "theme": "Graphite", "ui_style": "Modern", "animations": True, "smooth_scroll": True, "custom_titlebar": False, "translucent": False, "accent": "", "highlight_color": "", "ui_size": 10, "ui_family": "",
     # document defaults
     "doc_family": "", "doc_size": 11.0, "line_spacing": 1.18, "para_after": 6,
     "text_width": 760, "margin_left": 0, "margin_right": 0, "styles_json": "{}",

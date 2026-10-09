@@ -87,10 +87,25 @@ class Editor(QTextEdit):
         self.apply_prefs()
 
     # ------------------------------------------------------------ documents
+    top_inset = 0       # room above the first line for the floating toolbar dock
+
+    def set_top_inset(self, px):
+        if px != self.top_inset:
+            self.top_inset = px
+            self._apply_inset(self.document())
+            self._update_margins()
+
+    def _apply_inset(self, doc):
+        rf = doc.rootFrame()
+        ff = rf.frameFormat()
+        ff.setTopMargin(DOC_MARGIN + self.top_inset)
+        rf.setFrameFormat(ff)
+
     def set_document(self, doc: QTextDocument):
         self._cancel_crop()
         self.setDocument(doc)
         doc.setDocumentMargin(DOC_MARGIN)
+        self._apply_inset(doc)
         self._apply_zoom(doc)
         self._update_margins()
         self.setTextCursor(QTextCursor(doc))

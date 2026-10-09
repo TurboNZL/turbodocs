@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from . import theme
+from . import glass, theme
 from .animation import Animator
 from .prefs import prefs
 from .window import APP, MainWindow
@@ -30,8 +30,9 @@ def main(argv=None):
     app.setDesktopFileName("turbodocs")  # Wayland app_id: ties the window to turbodocs.desktop and its icon
     app.setWindowIcon(QIcon(str(ICON)))
     theme.apply(app, prefs.get("theme"), prefs.get("accent"), prefs.get("ui_size"), prefs.get("ui_family"),
-                prefs.get("ui_style"))
+                prefs.get("ui_style"), prefs.get("translucent"))
     Animator(app)
+    app.installEventFilter(glass.Glass(app))
     files = [a for a in argv[1:] if not a.startswith("-")]
     win = MainWindow(files[0] if files else None)
     win.show()

@@ -29,7 +29,7 @@ PRESETS = {
     "Ayu Mirage": P(True, "#1f2430", "#232834", "#2d3343", "#383f52", "#2b3040", "#cccac2", "#707a8c", "#ffcc66", "#34455a", ["IBM Plex Sans", "Noto Sans"], ["IBM Plex Sans", "Carlito"]),
     "Solarized Dark": P(True, "#002b36", "#073642", "#0b3f4c", "#124a58", "#0f4452", "#a9b6b8", "#657b83", "#2aa198", "#1b5563", ["Fira Sans", "Noto Sans"], ["Fira Sans", "Carlito"]),
     "Breeze Dark": P(True, "#232629", "#31363b", "#3b4045", "#475057", "#4d4d4d", "#eff0f1", "#a1a9b1", "#3daee9", "#1f5f80", ["Noto Sans", "DejaVu Sans"], ["Noto Sans", "Carlito"]),
-    "Adwaita Dark": P(True, "#1e1e1e", "#303030", "#3a3a3a", "#454545", "#3d3d3d", "#eeeeee", "#9a9996", "#78aeed", "#1c4d85", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
+    "Adwaita Dark": P(True, "#1e1e1e", "#242424", "#383838", "#444444", "#353535", "#ffffff", "#9a9996", "#3584e4", "#1c4d85", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
     "Windows 10 Dark": P(True, "#1e1e1e", "#2b2b2b", "#333333", "#3f3f3f", "#555555", "#f0f0f0", "#9a9a9a", "#0078d7", "#264f78", ["Segoe UI", "Open Sans", "Noto Sans"], ["Calibri", "Carlito"]),
     "Windows 11 Dark": P(True, "#202020", "#2c2c2c", "#343434", "#3d3d3d", "#3c3c3c", "#ffffff", "#b4b4b4", "#60cdff", "#0b4a6f", ["Segoe UI Variable", "Segoe UI", "Inter", "Noto Sans"], ["Aptos", "Calibri", "Carlito"]),
     "macOS Dark": P(True, "#1e1e1e", "#2a2a2c", "#3a3a3c", "#48484a", "#38383a", "#f5f5f7", "#98989d", "#0a84ff", "#1e4f8c", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
@@ -40,7 +40,7 @@ PRESETS = {
     "Sepia": P(False, "#f6efdf", "#ece3cf", "#e2d8c2", "#d9ceb5", "#d6cab0", "#3b3326", "#857a66", "#b5651d", "#e3c79a", ["Fira Sans", "Noto Sans"], ["Lora", "Noto Serif", "DejaVu Serif"]),
     "Solarized Light": P(False, "#fdf6e3", "#eee8d5", "#e6dfc8", "#ddd6c0", "#d6cfb8", "#586e75", "#93a1a1", "#268bd2", "#d3e6e7", ["Fira Sans", "Noto Sans"], ["Fira Sans", "Carlito"]),
     "Breeze Light": P(False, "#fcfcfc", "#eff0f1", "#e3e5e7", "#d5d8db", "#bdc3c7", "#232627", "#6e7377", "#3daee9", "#b6def4", ["Noto Sans", "DejaVu Sans"], ["Noto Sans", "Carlito"]),
-    "Adwaita Light": P(False, "#ffffff", "#ebebeb", "#e1e1e1", "#d6d6d6", "#d8d8d8", "#2e2e2e", "#77767b", "#3584e4", "#c1d9f6", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
+    "Adwaita Light": P(False, "#ffffff", "#fafafb", "#e8e8e9", "#dcdcdd", "#d9d9da", "#2e2e2e", "#77767b", "#3584e4", "#c1d9f6", ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"], ["Adwaita Sans", "Inter", "Cantarell", "Noto Sans"]),
     "macOS Light": P(False, "#ffffff", "#f2f2f2", "#ffffff", "#e5e5e5", "#d1d1d1", "#1d1d1f", "#86868b", "#007aff", "#b3d7ff", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
     "Windows XP Luna": P(False, "#ffffff", "#ece9d8", "#f1efe2", "#fff3d0", "#aca899", "#000000", "#716f64", "#316ac5", "#316ac5", ["Tahoma", "Verdana", "DejaVu Sans"], ["Liberation Serif", "Times New Roman"], "#ffffff"),
     "Windows 7 Aero": P(False, "#ffffff", "#e4ecf7", "#f3f6fb", "#dbe8fb", "#a0b4cc", "#1e1e1e", "#6d7b8d", "#3399ff", "#cde4fb", ["Segoe UI", "Open Sans", "Noto Sans"], ["Calibri", "Carlito"]),
@@ -62,6 +62,10 @@ PRESETS = {
     "Catppuccin Latte": P(False, "#eff1f5", "#e6e9ef", "#dce0e8", "#ccd0da", "#ccd0da", "#4c4f69", "#7c7f93", "#8839ef", "#dcc8f7", ["Work Sans", "Inter"], ["Work Sans", "Carlito"]),
     "Rosé Pine Dawn": P(False, "#faf4ed", "#f2e9e1", "#ebe0d6", "#e4d8cd", "#dfd3c7", "#575279", "#8a8599", "#b4637a", "#e8d4d0", ["Nunito", "Noto Sans"], ["Nunito", "Carlito"]),
     "Yaru Light": P(False, "#ffffff", "#f2f1f0", "#e8e6e3", "#dedbd7", "#d3d0cb", "#2e3436", "#6f6c68", "#e95420", "#f6c6b4", ["Ubuntu", "Nunito", "Noto Sans"], ["Ubuntu", "Nunito", "Carlito"]),
+    "Platinum": P(False, "#ffffff", "#dddddd", "#eeeeee", "#cfcfcf", "#7f7f7f", "#000000", "#555555", "#6666cc", "#b4b4e6", ["Geneva", "Charcoal", "Liberation Sans", "DejaVu Sans"], ["Geneva", "Liberation Sans", "Arimo"]),
+    "Aqua": P(False, "#ffffff", "#e8e8e8", "#f7f7f7", "#d9e6f6", "#a4a4a4", "#000000", "#6a6a6a", "#3d7de0", "#b5d5ff", ["Lucida Grande", "DejaVu Sans", "Noto Sans"], ["Lucida Grande", "Helvetica Neue", "Inter"]),
+    "Liquid Glass Light": P(False, "#ffffff", "#eef2f8", "#ffffff", "#e2e9f4", "#d6deeb", "#1d1d1f", "#74798a", "#0a84ff", "#bcdcff", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
+    "Liquid Glass Dark": P(True, "#1c1c20", "#26272e", "#34363f", "#3f424d", "#43464f", "#f5f5f7", "#9a9ca8", "#0a84ff", "#1e4f8c", ["SF Pro Text", "Inter", "Noto Sans"], ["Helvetica Neue", "Inter", "Carlito"]),
     "Windows 95": P(False, "#ffffff", "#c0c0c0", "#c0c0c0", "#d4d0c8", "#808080", "#000000", "#404040", "#000080", "#000080", ["Liberation Sans", "Nimbus Sans", "DejaVu Sans"], ["Liberation Sans", "Arimo"], "#ffffff"),
 }
 DEFAULT_THEME = "Graphite"
@@ -92,6 +96,12 @@ IFACES = {
                     flat_menu=True, ms=0),
     "Yaru (Ubuntu)": M("yaru", 4, 6, border=True, pad="5px 8px", scroll=12, handle_r=3, bw=0.22, cb_r=4,
                        btn_pad="6px 16px", ms=130, fade=80),
+    "Mac OS 9 (Platinum)": M("platinum", 3, 4, border=True, pad="3px 6px", scroll=16, handle_r=0, bw=0.5, cb_r=0,
+                             btn_pad="3px 14px", flat_menu=True, ms=0),
+    "Mac OS X (Aqua)": M("aqua", 4, 8, border=True, pad="3px 7px", scroll=15, handle_r=7, bw=0.35, grad=True, cb_r=3,
+                         btn_pad="3px 16px", ms=150, fade=90),
+    "macOS (Liquid Glass)": M("glass", 10, 16, pad="6px 10px", scroll=12, handle_r=6, bw=0.12, cb_r=6,
+                              btn_pad="6px 18px", ms=200, fade=130),
     "Terminal": M("term", 0, 0, border=True, pad="3px 6px", scroll=12, handle_r=0, bw=0.5, cb_r=0,
                   btn_pad="4px 14px", flat_menu=True, mono=True, ms=0),
     "Fusion (native)": None,
@@ -118,6 +128,10 @@ BUNDLES = {
     "Ubuntu Aubergine": ("Ubuntu Aubergine", "Yaru (Ubuntu)"),
     "macOS (light)": ("macOS Light", "Rounded"),
     "macOS (dark)": ("macOS Dark", "Rounded"),
+    "Mac OS 9 Platinum": ("Platinum", "Mac OS 9 (Platinum)"),
+    "Mac OS X Aqua": ("Aqua", "Mac OS X (Aqua)"),
+    "macOS Liquid Glass (light)": ("Liquid Glass Light", "macOS (Liquid Glass)"),
+    "macOS Liquid Glass (dark)": ("Liquid Glass Dark", "macOS (Liquid Glass)"),
     "GitHub (light)": ("GitHub Light", "Modern"),
     "GitHub (dark)": ("GitHub Dark", "Modern"),
     "Retro Terminal": ("Retro Terminal", "Terminal"),
@@ -126,6 +140,7 @@ BUNDLES = {
 cur = dict(PRESETS[DEFAULT_THEME], name=DEFAULT_THEME)
 fx = dict(ms=0, fade=0)          # hover/open animation spec for the current interface style (see animation.py)
 _fonts_loaded = False
+translucent_on = False           # the Liquid Glass style is drawing see-through chrome (window is translucent)
 
 
 def load_bundled_fonts():
@@ -239,14 +254,15 @@ def _assets(c, on_accent, tick_col) -> dict:
 _applied_key = None
 
 
-def apply(app, name=DEFAULT_THEME, accent="", ui_size=10, ui_family="", iface=DEFAULT_IFACE):
+def apply(app, name=DEFAULT_THEME, accent="", ui_size=10, ui_family="", iface=DEFAULT_IFACE, translucent=False):
     """Apply colours, fonts and the widget stylesheet. Restyling the whole app is the slowest thing the program
     does, so an unchanged appearance is a no-op."""
-    global cur, fx, _applied_key
-    key = (name, accent, int(ui_size), ui_family, iface)
+    global cur, fx, _applied_key, translucent_on
+    key = (name, accent, int(ui_size), ui_family, iface, bool(translucent))
     if key == _applied_key:
         return
     _applied_key = key
+    translucent_on = bool(translucent and IFACES.get(iface) and IFACES[iface]["kind"] == "glass")
     load_bundled_fonts()
     base = PRESETS.get(name, PRESETS[DEFAULT_THEME])
     cur = dict(base, name=name)
@@ -666,15 +682,32 @@ QStatusBar {{ border-top: none; }}
 #Card {{ border-radius: 8px; }}
 """
     elif kind == "gnome":
-        push = mix(field, c["text"], .02)
-        push_b = mix(c["bg"], c["text"], .18)
+        # libadwaita: borderless tinted buttons, 6px radii, headerbar tone for chrome, accent-filled suggested action
+        hb = "#303030" if not light else "#ebebeb"
+        tint = lambda t: mix(c["chrome"], c["text"], t)   # noqa: E731
+        push, push_h, push_p = tint(.08 if light else .10), tint(.13 if light else .16), tint(.19 if light else .22)
+        push_b = push_bh = "transparent"
+        tool_h, tool_p, tool_b, tool_bh = tint(.09), tint(.15), clear(hb), clear(hb)
+        menubar_bg = toolbar_bg = hb
+        menu_bg = c["chrome"] if light else "#383838"
+        menu_sel_bg = tint(.08 if light else .12)
+        field_bg = tint(.06 if light else .08)
+        list_sel = tint(.10 if light else .14)
+        checked = tint(.14)
         extra += f"""
-QPushButton {{ border-bottom-color: {mix(c['bg'], c['text'], .28)}; }}
-QPushButton:default {{ border-color: {mix(acc, '#000000', .1)}; color: {on_accent}; }}
-QToolBar {{ padding: 6px 10px; }}
-QMenu {{ border-radius: 12px; padding: 6px; }}
-QMenu::item {{ margin: 1px 0; border-radius: 6px; }}
-QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{ border: 1px solid {mix(c['bg'], c['text'], .14)}; }}
+QMenuBar {{ border-bottom: none; padding: 0 8px; }}
+QMenuBar::item {{ border-radius: 6px; padding: 5px 10px; margin: 5px 1px; }}
+QPushButton {{ border: none; padding: 6px 14px; min-height: 22px; }}
+QPushButton:default {{ background: {acc}; color: #ffffff; }}
+QPushButton:default:hover {{ background: {mix(acc, '#ffffff', .12)}; }}
+QToolBar {{ background: {hb}; border-bottom: 1px solid {mix(hb, '#000000', .12 if light else .35)}; padding: 6px 10px; spacing: 4px; }}
+QToolButton {{ border: none; border-radius: 6px; }}
+QMenu {{ border: 1px solid {mix(menu_bg, c['text'], .12)}; border-radius: 12px; padding: 6px; }}
+QMenu::item {{ margin: 1px 0; border-radius: 6px; padding: 6px 28px 6px 28px; }}
+QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{ border: 2px solid transparent; background: {field_bg}; }}
+QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 2px solid {acc}; }}
+#Popup, #Floating, #FindBar, #ImageBar {{ border: 1px solid {mix(menu_bg, c['text'], .12)}; border-radius: 12px; }}
+#Card {{ border: 1px solid {mix(c['bg'], c['text'], .10)}; border-radius: 12px; }}
 """
     elif kind == "yaru":
         push = [(0, mix(field, "#ffffff", .12 if light else .06)), (1, field)]
@@ -696,9 +729,120 @@ QMenu {{ border-radius: 14px; padding: 6px; }}
 QMenu::item {{ border-radius: 9px; }}
 """
 
-    sel_color = menu_sel_fg if kind in ("xp", "classic", "term") else c["text"]
+    elif kind == "platinum":
+        push = [(0, "#ffffff"), (.45, "#e6e6e6"), (1, "#bdbdbd")]
+        push_h = [(0, "#ffffff"), (.45, "#efefef"), (1, "#cbcbcb")]
+        push_p = [(0, "#8c8c8c"), (1, "#b5b5b5")]
+        push_b = push_bh = "#000000"
+        tool_h, tool_p = [(0, "#ffffff"), (1, "#cfcfcf")], [(0, "#9c9c9c"), (1, "#c2c2c2")]
+        tool_b, tool_bh = clear("#000000"), "#000000"
+        menubar_bg, menu_bg = "#eeeeee", "#eeeeee"
+        menu_sel_bg, list_sel = acc, acc
+        field_bg = "#ffffff"
+        fb = "#000000"
+        extra += f"""
+QMenuBar {{ border-bottom: 1px solid #000000; }}
+QMenu {{ border: 1px solid #000000; padding: 2px; }}
+QPushButton {{ border-radius: 6px; }}
+QPushButton:default {{ border: 3px double #000000; background: {fill_css(push)}; color: #000000; }}
+QToolButton:checked {{ background: {fill_css(tool_p)}; border-color: #000000; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{ border: 1px solid #000000; border-radius: 0; }}
+QScrollBar::handle:vertical {{ background: {fill_css([(0, '#ffffff'), (1, '#bcbcbc')])}; border: 1px solid #000000; }}
+QScrollBar::handle:horizontal {{ background: {fill_css([(0, '#ffffff'), (1, '#bcbcbc')])}; border: 1px solid #000000; }}
+"""
+    elif kind == "aqua":
+        gel = lambda a_, b_, c_, d_: [(0, a_), (.5, b_), (.51, c_), (1, d_)]   # noqa: E731
+        push = gel("#ffffff", "#f3f3f3", "#dedede", "#f2f2f2")
+        push_h = gel("#ffffff", "#e9f1fb", "#cfe0f5", "#e6f0fb")
+        push_p = gel("#a4c6f2", "#7eabe8", "#5f96df", "#82b2ee")
+        push_b, push_bh = "#8a8a8a", "#4f7fc0"
+        tool_h, tool_p = push_h, push_p
+        tool_b, tool_bh = clear("#8a8a8a"), "#8a8a8a"
+        menu_bg = "#f6f6f6" if light else c["chrome"]
+        menu_sel_bg = fill_css([(0, "#76adf3"), (1, "#2c6bd0")])
+        list_sel = fill_css([(0, "#7db2f5"), (1, "#3d7de0")])
+        menubar_bg = [(0, "#f4f4f4"), (1, "#dcdcdc")] if light else c["chrome"]
+        toolbar_bg = [(0, "#ececec"), (1, "#c9c9c9")] if light else c["chrome"]
+        status_bg = toolbar_bg
+        extra += f"""
+QMenuBar::item:selected {{ background: {menu_sel_bg}; color: #ffffff; }}
+QMenu {{ border: 1px solid #8a8a8a; border-radius: 0; padding: 4px 0; }}
+QMenu::item {{ border-radius: 0; margin: 0; }}
+QMenu::item:selected {{ color: #ffffff; }}
+QPushButton {{ border-radius: 11px; min-height: 18px; }}
+QPushButton:default {{ border: 1px solid #3868b8; color: #ffffff;
+    background: {fill_css(gel('#bcdcff', '#78b0f6', '#3f86e6', '#6aa8f4'))}; }}
+QPushButton:default:hover {{ background: {fill_css(gel('#cde5ff', '#8cbcf8', '#5195ec', '#7cb6f6'))}; }}
+QToolButton {{ border-radius: 4px; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{ border: 1px solid #7a7a7a; border-top-color: #5c5c5c; border-radius: 3px; }}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 2px solid #6aa4ea; }}
+QScrollBar::handle:vertical {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #b9d6fa,stop:.5 #5f9be8,stop:1 #3b78d0); border: 1px solid #3868b8; border-radius: 7px; }}
+QScrollBar::handle:horizontal {{ background: {fill_css(gel('#b9d6fa', '#7aaef0', '#4a88dc', '#6ea6ee'))}; border: 1px solid #3868b8; border-radius: 7px; }}
+QSlider::handle:horizontal {{ background: {fill_css(gel('#ffffff', '#e8e8e8', '#cfcfcf', '#ececec'))}; border: 1px solid #7a7a7a; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }}
+"""
+        if light:   # the Aqua pinstripe on dialogs
+            from PySide6.QtGui import QImage
+            pin = _asset_dir() / "aqua-pin.png"
+            img = QImage(2, 4, QImage.Format.Format_RGB32)
+            for y in range(4):
+                for x in range(2):
+                    img.setPixelColor(x, y, QColor("#eaeaea" if y < 2 else "#f4f4f4"))
+            img.save(str(pin))
+            extra += f"QDialog {{ background-image: url({pin.as_posix()}); }}\n"
+    elif kind == "glass":
+        # macOS Tahoe 'Liquid Glass': frosted translucent capsules with bright inner rims
+        rim = "#ffffff" if light else mix(c["chrome"], "#ffffff", .22)
+        if light:
+            push = [(0, "#ffffff"), (1, "#eef2f9")]
+            push_h = [(0, "#ffffff"), (1, "#e3ecf9")]
+            push_p = [(0, "#d6e3f5"), (1, "#c8d9f0")]
+            push_b = push_bh = mix("#ffffff", c["border"], .7)
+            menubar_bg = toolbar_bg = [(0, "#f7f9fd"), (1, "#eaeff7")]
+            status_bg = menubar_bg
+            menu_bg = "#fafbfe"
+        else:
+            push = [(0, mix(field, "#ffffff", .10)), (1, field)]
+            push_h = [(0, mix(c["hover"], "#ffffff", .10)), (1, c["hover"])]
+            push_p = mix(c["hover"], acc, .35)
+            push_b = push_bh = mix(c["chrome"], "#ffffff", .20)
+            menubar_bg = toolbar_bg = [(0, mix(c["chrome"], "#ffffff", .05)), (1, c["chrome"])]
+            status_bg = menubar_bg
+            menu_bg = mix(c["chrome"], "#ffffff", .04)
+        pill = "rgba(255,255,255,150)" if light else "rgba(255,255,255,26)"
+        pill_h = "rgba(255,255,255,215)" if light else "rgba(255,255,255,48)"
+        pill_b = "rgba(255,255,255,200)" if light else "rgba(255,255,255,40)"
+        tool_h = mix(c["chrome"], acc, .16 if light else .24)
+        tool_p = mix(c["chrome"], acc, .30)
+        menu_sel_bg = acc
+        list_sel = mix(c["chrome"], acc, .22)
+        extra += f"""
+QMenuBar::item {{ border-radius: 12px; margin: 3px 1px; }}
+QMenuBar::item:selected {{ background: {tool_h}; }}
+{f"""QMenu {{ background: transparent; }}
+#Popup, #Floating, #FindBar, #ImageBar, #Dock {{ background: transparent; }}
+#Dock {{ border: none; border-radius: 26px; padding: 4px 8px; spacing: 2px; }}
+#Dock QToolButton {{ background: {pill}; border: 1px solid {pill_b}; border-radius: 17px; padding: 3px 4px; min-height: 26px; min-width: 26px; }}
+#Dock QToolButton:hover {{ background: {pill_h}; }}
+#Dock QToolButton:checked {{ background: {mix(c['chrome'], acc, .35)}; color: {'#ffffff' if not light else c['text']}; }}
+#Dock QToolButton:pressed {{ background: {fill_css(tool_p)}; }}
+#Dock QComboBox {{ background: {pill}; border: 1px solid {pill_b}; border-radius: 17px; padding: 3px 12px; min-height: 26px; }}
+#Dock QToolBar::separator, #Dock::separator {{ background: transparent; width: 6px; }}
+QPushButton {{ background: {fill_css(clear(push, 190 if light else 170))}; }}""" if translucent_on else ""}
+QMenu {{ border: 1px solid {mix(menu_bg, c['text'], .12)}; border-radius: 18px; padding: 8px; }}
+QMenu::item {{ border-radius: 12px; margin: 1px 0; }}
+QMenu::item:selected {{ color: #ffffff; }}
+QPushButton {{ border-radius: 15px; border-top-color: {rim}; }}
+QPushButton:default {{ border-color: {mix(acc, '#000000', .1)}; background: {fill_css([(0, mix(acc, '#ffffff', .25)), (1, acc)])}; color: #ffffff; }}
+QToolButton {{ border-radius: 10px; }}
+QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{ border-radius: 14px; border: 1px solid {mix(c['bg'], c['text'], .12)}; }}
+QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 2px solid {acc}; }}
+#Popup, #Floating, #FindBar, #ImageBar {{ border: 1px solid {mix(menu_bg, c['text'], .12)}; border-radius: 18px; }}
+#Card {{ border-radius: 18px; }}
+"""
+
+    sel_color = menu_sel_fg if kind in ("xp", "classic", "term", "aqua", "glass") else c["text"]
     menu_sel_css, list_sel_css = menu_sel_bg, list_sel
-    list_sel_fg = "#ffffff" if (kind in ("xp", "classic") or (kind == "yaru")) else c["text"]
+    list_sel_fg = "#ffffff" if (kind in ("xp", "classic", "aqua") or (kind == "yaru")) else c["text"]
     box_css = f"width: {cb_size}px; height: {cb_size}px; border-radius: {cbr}px; border: 1.5px solid {cb_border}; background: {box_bg};"
     focus = (f"border: 1px solid {fb}; border-bottom: 2px solid {acc};" if m["focus_bottom"]
              else f"border-color: {acc};")

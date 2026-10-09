@@ -32,7 +32,7 @@ def spec_for(kind, c, light, acc, on_accent) -> dict:
                     fg="#000000" if light else c["text"], h=28, edge=7, btn_w=0, btn_h=20, btn="aero7",
                     inline_menu=False, frame="#3b4f6b" if light else c["border"],
                     frame_fill="#b5cdeb" if light else c["chrome"], frame_hi="#e9f2fc" if light else None,
-                    client_border="#6a7d99" if light else None, shine=light, glow=light,
+                    client_border="#6a7d99" if light else None, shine=light, glow=light, frame_glow=light,
                     close="#c9372c", close_press="#a82a20")
     elif kind == "xp":
         base.update(bg=[(0, "#0997ff"), (.08, "#0058ee"), (.4, "#0050d6"), (.9, "#0049c9"), (1, "#003dd7")],
@@ -41,6 +41,18 @@ def spec_for(kind, c, light, acc, on_accent) -> dict:
     elif kind == "classic":
         base.update(bg=[(0, "#000080"), (1, "#1084d0")], fg="#ffffff", bold=True, h=20, btn_w=16, btn_h=14,
                     btn="bevel", inline_menu=False, frame="#000000", frame_fill=c["chrome"], edge=3)
+    elif kind == "platinum":
+        base.update(layout="mac", h=22, align="center", btn="plat", btn_w=13, bg="#dddddd", fg="#000000",
+                    inline_menu=False, frame="#000000", frame_fill="#dddddd", edge=3, stripes=True)
+    elif kind == "aqua":
+        base.update(layout="mac", h=24, align="center", btn="gel", btn_w=14, inline_menu=False,
+                    bg=[(0, "#ececec"), (1, "#c4c4c4")] if light else [(0, theme.mix(c["chrome"], "#ffffff", .1)), (1, c["chrome"])],
+                    fg="#000000" if light else c["text"], frame="#6e6e6e" if light else c["border"],
+                    frame_fill="#c4c4c4" if light else c["chrome"], edge=1)
+    elif kind == "glass":
+        base.update(layout="mac", h=40, align="center", btn="mac", btn_w=14, inline_menu=False,
+                    bg=[(0, "#f7f9fd"), (1, "#eaeff7")] if light else [(0, theme.mix(c["chrome"], "#ffffff", .05)), (1, c["chrome"])],
+                    frame=theme.mix(c["bg"], c["text"], .16), edge=1)
     elif kind in ("gnome", "yaru"):
         base.update(layout="round", h=46 if kind == "gnome" else 40, align="center", bold=kind == "gnome",
                     btn="round", btn_w=28, frame=theme.mix(c["bg"], c["text"], .18),
@@ -48,6 +60,9 @@ def spec_for(kind, c, light, acc, on_accent) -> dict:
                     press=theme.mix(c["chrome"], ink, .2 if light else .22),
                     close=acc if kind == "yaru" else theme.mix(c["chrome"], ink, .12 if light else .14),
                     close_press=acc, close_fg=on_accent if kind == "yaru" else c["text"])
+        if kind == "gnome":     # libadwaita headerbar tones
+            hb = "#ebebeb" if light else "#303030"
+            base.update(bg=hb, frame_fill=hb, frame=theme.mix(hb, "#000000", .2))
     elif kind == "rounded":
         base.update(layout="mac", h=38, align="center", btn="mac", btn_w=14, inline_menu=False)
     elif kind == "breeze":
@@ -86,7 +101,7 @@ class CaptionButton(QAbstractButton):
     def set_spec(self, spec):
         self.spec = spec
         bw, bh = spec["btn_w"], spec["btn_h"] or spec["h"]
-        if spec["btn"] in ("mac", "round"):
+        if spec["btn"] in ("mac", "round", "gel", "plat"):
             bw = bh = spec["btn_w"]
         elif spec["btn"] == "aero7":
             bw, bh = {MIN: 29, MAX: 27, CLOSE: 47}[self.role], spec["btn_h"]
@@ -188,6 +203,43 @@ class CaptionButton(QAbstractButton):
             p.setBrush(fill)
             p.drawEllipse(c)
             self._glyph(p, c, QColor(s["close_fg"] if close and s["close"] != s["hover"] else s["fg"]), thin=True)
+        elif kind == "plat":
+            sq = QRectF(r.center().x() - 6.5, r.center().y() - 6.5, 13, 13)
+            g = QLinearGradient(sq.topLeft(), sq.bottomRight())
+            g.setColorAt(0, QColor("#8a8a8a" if down else "#ffffff"))
+            g.setColorAt(1, QColor("#b0b0b0" if down else "#a8a8a8"))
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            p.setPen(QPen(QColor("#000000"), 1))
+            p.setBrush(g)
+            p.drawRect(sq.adjusted(.5, .5, -.5, -.5))
+            if self.role == MAX:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRect(QRectF(sq.left() + 3.5, sq.top() + 3.5, 4, 4))
+            elif self.role == MIN:
+                p.drawLine(QPointF(sq.left() + 3, sq.center().y()), QPointF(sq.right() - 3, sq.center().y()))
+        elif kind == "gel":
+            base = QColor({CLOSE: "#e8483c", MIN: "#f2b820", MAX: "#3fbc2c"}[self.role])
+            if not self.window().isActiveWindow():
+                base = QColor("#b4b4b4")
+            if down:
+                base = base.darker(125)
+            d = r.width() - 1
+            c_ = QRectF(.5, .5, d, d)
+            g = QLinearGradient(c_.topLeft(), c_.bottomLeft())
+            g.setColorAt(0, base.lighter(165))
+            g.setColorAt(.55, base)
+            g.setColorAt(1, base.lighter(125))
+            p.setPen(QPen(base.darker(175), 1))
+            p.setBrush(g)
+            p.drawEllipse(c_)
+            hl = QLinearGradient(c_.topLeft(), c_.bottomLeft())
+            hl.setColorAt(0, QColor(255, 255, 255, 235))
+            hl.setColorAt(1, QColor(255, 255, 255, 30))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(hl)
+            p.drawEllipse(QRectF(c_.left() + d * .14, c_.top() + d * .05, d * .72, d * .46))
+            if self.underMouse() or getattr(self.parent(), "mac_hover", False):
+                self._glyph(p, c_.adjusted(3, 3, -3, -3), QColor(0, 0, 0, 170), thin=True, small=True)
         elif kind == "mac":
             col = QColor({CLOSE: "#ff5f57", MIN: "#febc2e", MAX: "#28c840"}[self.role])
             if not self.window().isActiveWindow():
@@ -333,10 +385,10 @@ class GlowLabel(QLabel):
         r = self.rect().adjusted(0, 0, -2, 0)
         text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, r.width() - 8)
         p.setFont(self.font())
-        p.setPen(QColor(255, 255, 255, 26))
-        for dx in range(-4, 5):
-            for dy in range(-3, 4):
-                if dx * dx + dy * dy <= 20:
+        p.setPen(QColor(255, 255, 255, 40))
+        for dx in range(-6, 7):
+            for dy in range(-5, 6):
+                if dx * dx + dy * dy <= 30:
                     p.drawText(r.translated(dx, dy), flags, text)
         p.setPen(QColor("#000000"))
         p.drawText(r, flags, text)
@@ -417,7 +469,7 @@ class TopBar(QWidget):
         h = s["h"]
         lay = self.btn_lay
         lay.setContentsMargins(0, 0, 6 if s["layout"] != "win" else 0, 0)
-        lay.setSpacing({"mac": 8, "round": 6}.get(s["layout"], 2 if s["btn"] in ("xp", "bevel", "aero") else
+        lay.setSpacing({"mac": 8 if s["btn"] != "plat" else 6, "round": 6}.get(s["layout"], 2 if s["btn"] in ("xp", "bevel", "aero") else
                                                   -1 if s["btn"] == "aero7" else 0))
         order = (CLOSE, MIN, MAX) if s["layout"] == "mac" else (MIN, MAX, CLOSE)
         for r in order:
@@ -467,8 +519,52 @@ class TopBar(QWidget):
         self.grid.setColumnMinimumWidth(0, 28)
         self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+    def _paint_glow(self):
+        """Aero glass bloom: white light pooling at the top of the caption and sky-blue haze in the corners."""
+        p = QPainter(self)
+        active = self.win.isActiveWindow()
+        h = self.spec["h"] + self.win.contentsMargins().top()
+        w = self.width()
+        p.setPen(Qt.PenStyle.NoPen)
+        g = QLinearGradient(0, 0, 0, h)
+        g.setColorAt(0, QColor(255, 255, 255, 150 if active else 70))
+        g.setColorAt(.5, QColor(225, 240, 255, 50 if active else 20))
+        g.setColorAt(1, QColor(255, 255, 255, 0))
+        p.setBrush(g)
+        p.drawRect(0, 0, w, h)
+        for cx in (0, w):
+            rg = QRadialGradient(QPointF(cx, 0), w * .22)
+            rg.setColorAt(0, QColor(150, 205, 255, 130 if active else 50))
+            rg.setColorAt(1, QColor(150, 205, 255, 0))
+            p.setBrush(rg)
+            p.drawRect(0, 0, w, h)
+        p.end()
+
+    def _paint_stripes(self):
+        """Mac OS 9 Platinum title bar: horizontal pinstripes either side of the title text."""
+        p = QPainter(self)
+        h = self.spec["h"]
+        t = self.title
+        tw = min(t.width(), t.fontMetrics().horizontalAdvance(t.text()) + 24)
+        gap_l = t.x() + (t.width() - tw) // 2
+        gap_r = gap_l + tw
+        x0 = self.btn_box.x() + self.btn_box.width() + 4
+        x1 = self.width() - 6
+        for y in range(4, h - 4, 2):
+            p.setPen(QColor("#ffffff"))
+            p.drawLine(x0, y, gap_l, y)
+            p.drawLine(gap_r, y, x1, y)
+            p.setPen(QColor("#8f8f8f"))
+            p.drawLine(x0, y + 1, gap_l, y + 1)
+            p.drawLine(gap_r, y + 1, x1, y + 1)
+        p.end()
+
     def paintEvent(self, e):
         super().paintEvent(e)
+        if self.custom and self.spec.get("stripes") and not self.win.isFullScreen():
+            self._paint_stripes()
+        if self.custom and self.spec.get("frame_glow") and not self.win.isFullScreen():
+            self._paint_glow()
         if not (self.custom and self.spec.get("shine")) or self.win.isFullScreen():
             return
         # Aero glass: two soft diagonal reflections across the caption area

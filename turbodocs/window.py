@@ -3,14 +3,14 @@ import json
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap,
+from PySide6.QtCore import QEvent, QRectF, QSettings, Qt, QTimer, Signal
+from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QIcon, QImage, QKeySequence, QLinearGradient, QPainter, QPixmap,
                            QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocumentFragment)
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFontComboBox, QHBoxLayout, QInputDialog, QLabel, QMainWindow,
                                QMenu, QMenuBar, QMessageBox, QPlainTextEdit, QSizePolicy, QSlider, QStackedLayout, QToolBar,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import backup, docx_io, markdown, styles, theme
+from . import backup, docx_io, glass, markdown, styles, theme
 from .dialogs import LinkDialog, SplitCellDialog, TableDialog, WordCountDialog, text_stats
 from .dashboard import Dashboard
 from .document import new_document, reset_blank
@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self.md_native = False
         self.struct_dirty = False
         self._custom = False
+        self._docked = False
         self._menus = []
         self.backup = backup.Backup()
         self.styles = styles.DocStyles()
@@ -164,6 +165,9 @@ class MainWindow(QMainWindow):
         self.editor.cellColorRequested.connect(lambda: self._pick('cell'))
         self.md.document().modificationChanged.connect(self._update_title)
         self.canvas.resized.connect(self._place_overlays)
+        self.editor.verticalScrollBar().valueChanged.connect(glass.invalidate)
+        self.editor.textChanged.connect(glass.invalidate)
+        self.stack.currentChanged.connect(glass.invalidate)
         prefs.changed.connect(self._apply_prefs)
 
         self._install(styles.DocStyles(), [("Tab 1", None)])
@@ -315,7 +319,7 @@ class MainWindow(QMainWindow):
         self.setMenuWidget(self.topbar)
         self.windowTitleChanged.connect(self.topbar.set_title)
         self.topbar.set_icon(QApplication.windowIcon())
-        m = self._menu(mb, "&File")
+        m = self._menu(mb, "File")
         m.addActions([self.a_home, self.a_new, self.a_new_md, self.a_open])
         self.recent_menu = self._menu(m, "Open recent")
         self.recent_menu.aboutToShow.connect(self._fill_recent)
@@ -327,7 +331,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.a_prefs)
         m.addAction(self.a_quit)
 
-        m = self._menu(mb, "&Edit")
+        m = self._menu(mb, "Edit")
         m.addActions([self.a_undo, self.a_redo])
         m.addSeparator()
         m.addActions([self.a_cut, self.a_copy, self.a_paste, self.a_paste_plain])
@@ -336,17 +340,17 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions([self.a_find, self.a_replace])
 
-        m = self._menu(mb, "&View")
+        m = self._menu(mb, "View")
         m.addActions([self.a_md, self.a_tabs, self.a_width])
         m.addSeparator()
         m.addActions([self.a_zoom_in, self.a_zoom_out, self.a_zoom_reset])
         m.addSeparator()
         m.addAction(self.a_full)
 
-        m = self._menu(mb, "&Insert")
+        m = self._menu(mb, "Insert")
         m.addActions([self.a_image, self.a_table, self.a_link, self.a_emoji, self.a_date])
 
-        self.format_menu = m = self._menu(mb, "F&ormat")
+        self.format_menu = m = self._menu(mb, "Format")
         t = self._menu(m, "Text")
         t.addActions([self.a_bold, self.a_italic, self.a_underline, self.a_strike])
         t.addSeparator()
@@ -380,9 +384,9 @@ class MainWindow(QMainWindow):
         tb.addActions([self.a_merge, self.a_split, self.a_cell_color])
         tb.addSeparator()
         tb.addActions([self.a_del_row, self.a_del_col, self.a_del_table])
-        self.rich_menus = [m, self._menus[next(i for i, x in enumerate(self._menus) if x.title() == '&Insert')]]  # Format, Insert
+        self.rich_menus = [m, self._menus[next(i for i, x in enumerate(self._menus) if x.title() == 'Insert')]]  # Format, Insert
 
-        m = self._menu(mb, "&Tools")
+        m = self._menu(mb, "Tools")
         m.addActions([self.a_wc, self.a_prefs])
 
     def _quick(self, action, glyph, tip, bold=False, italic=False, underline=False):
@@ -542,13 +546,45 @@ class MainWindow(QMainWindow):
         super().showEvent(e)
         self._place_overlays()
 
+    def _set_dock(self, on):
+        """Liquid Glass: the toolbar floats over the document as a frosted capsule instead of sitting in a bar."""
+        if on == self._docked:
+            return
+        self._docked = on
+        tb = self.toolbar
+        if on:
+            self.removeToolBar(tb)
+            tb.setParent(self.canvas)
+            tb.setObjectName("Dock")
+            tb.setProperty("glassRadius", 26)
+            tb.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        else:
+            tb.setObjectName("")
+            self.addToolBar(tb)
+            self.editor.set_top_inset(0)
+        tb.setVisible(True)
+        tb.style().unpolish(tb)
+        tb.style().polish(tb)
+        self._place_overlays()
+        glass.invalidate()
+
     def _place_overlays(self):
-        self.panel.move(14, 14)
-        self.panel.fit_height(self.canvas.height())
+        top = 14
+        if self._docked:
+            dock = self.toolbar
+            dock.setFixedWidth(max(320, self.canvas.width() - 28))
+            dock.adjustSize()
+            dock.move(14, 10)
+            dock.raise_()
+            top = 10 + dock.height() + 10
+            self.editor.set_top_inset(dock.height() - 4)
+        self.panel.move(14, top)
+        self.panel.fit_height(self.canvas.height() - (top - 14))
         self.findbar.adjustSize()
-        self.findbar.move(max(8, self.canvas.width() - self.findbar.width() - 28), 12)
+        self.findbar.move(max(8, self.canvas.width() - self.findbar.width() - 28), top - 2)
         self.panel.raise_()
         self.findbar.raise_()
+        glass.invalidate()
 
     # ============================================================ tabs / documents
     def _install(self, st, tab_specs, idx=0):
@@ -1269,7 +1305,8 @@ class MainWindow(QMainWindow):
 
     def _apply_prefs(self):
         theme.apply(QApplication.instance(), prefs.get("theme"), prefs.get("accent"), prefs.get("ui_size"),
-                    prefs.get("ui_family"), prefs.get("ui_style"))
+                    prefs.get("ui_family"), prefs.get("ui_style"), prefs.get("translucent"))
+        self._set_dock(theme.translucent_on)
         self.md_highlighter.rebuild()
         self.editor.apply_prefs()
         self._backup_timer.setInterval(prefs.get("backup_ms"))
@@ -1345,19 +1382,38 @@ class MainWindow(QMainWindow):
             return
         p = QPainter(self)
         edge = self.contentsMargins().left()
-        if edge:
+        if edge and not tb.get("translucent"):
             p.fillRect(self.rect(), QColor(tb["frame_fill"]))
             p.fillRect(self.rect().adjusted(edge, edge, -edge, -edge), QColor(theme.cur["chrome"]))
         if not self.isMaximized():
             if tb.get("frame_hi"):      # glass frames have a light inner edge
                 p.setPen(QColor(255, 255, 255, 140))
                 p.drawRect(self.rect().adjusted(1, 1, -2, -2))
+            if tb.get("frame_glow") and edge:
+                self._paint_aero_glow(p, edge)
             p.setPen(QColor(tb["frame"]))
             p.drawRect(self.rect().adjusted(0, 0, -1, -1))
             if tb.get("client_border") and edge > 1:
                 p.setPen(QColor(tb["client_border"]))
                 p.drawRect(self.rect().adjusted(edge - 1, edge + self.topbar.height() - 1, -edge, -edge))
         p.end()
+
+    def _paint_aero_glow(self, p, edge):
+        """The pale glow Windows 7 casts along the inside of its glass frame, brightest at the top."""
+        r = self.rect()
+        top = edge + self.topbar.height()
+        active = self.isActiveWindow()
+        p.setPen(Qt.PenStyle.NoPen)
+        # side and bottom borders: a light inner glow
+        for rect, (x1, y1, x2, y2) in ((QRectF(1, top, edge - 1, r.height() - top - 1), (0, 0, 1, 0)),
+                                       (QRectF(r.width() - edge, top, edge - 1, r.height() - top - 1), (1, 0, 0, 0)),
+                                       (QRectF(1, r.height() - edge, r.width() - 2, edge - 1), (0, 1, 0, 0))):
+            sg = QLinearGradient(rect.left() + rect.width() * x1, rect.top() + rect.height() * y1,
+                                 rect.left() + rect.width() * x2, rect.top() + rect.height() * y2)
+            sg.setColorAt(0, QColor(255, 255, 255, 140 if active else 60))
+            sg.setColorAt(1, QColor(190, 225, 255, 40))
+            p.setBrush(sg)
+            p.drawRect(rect)
 
     def changeEvent(self, e):
         super().changeEvent(e)
