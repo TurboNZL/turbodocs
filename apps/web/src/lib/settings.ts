@@ -10,6 +10,8 @@ export interface TurboDocsDesktop {
   setModule(id: string, on: boolean): Promise<ModuleInfo[]>;
   openDialog(): Promise<OpenRequest[]>;
   takePending(): Promise<OpenRequest[]>;
+  /** the bytes of a file that was opened through TurboDocs (the main process refuses any other path) */
+  readFile(path: string): Promise<Uint8Array>;
   onOpen(cb: (r: OpenRequest) => void): () => void;
   updates: import('./native.ts').NativeUpdates;
   getGpu?(): Promise<GpuInfo>; gpuReport?(): Promise<string>; openGpuPage?(): void; setGpu?(mode: string): Promise<void>;

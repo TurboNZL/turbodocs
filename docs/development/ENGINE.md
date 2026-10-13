@@ -6,7 +6,7 @@ Pinned in `.turboengine.json` (engine commit, modules used, what moved). The eng
 |---|---|---|
 | `release-pipeline` | `.github/workflows/` | Desktop only (no Android, no server editions); `auto-pr.yml` ignores `legacy/**`. |
 | `updaters` | `apps/electron/src/{updater,updateErrors,debInstall}.ts`, `apps/web/src/components/AppSettings.tsx`, `lib/native.ts` | Renamed; Android parts and the Discord card dropped. The updater has not run against a real release yet. |
-| `appearance` | `apps/web/src/lib/appearance.ts`, `tailwind.config.ts`, `index.css` | Uses `persist: true` and the stock `<turbo-themes-picker>`; no layouts, no own picker card. Fonts load from the CDN. |
+| `appearance` | `apps/web/src/lib/appearance.ts`, `tailwind.config.ts`, `index.css` | Uses `persist: true` and the stock `<turbo-themes-picker>`; no layouts, no own picker card. Fonts are bundled: `apps/web/scripts/gen-fonts.mjs` writes `src/fonts.css` from the fonts the installed styles ask for (plus Inter and Cantarell), and the engine runs with `fonts: 'none'`. |
 | `guides-and-docs` | `apps/web/src/lib/{guides,markdown}.ts`, `components/GuidesTab.tsx`, `docs/` | Plain `<select>` instead of the engine's `Select` component. |
 | `window-frame` | `apps/electron/src/{main,preload,desktopConfig,graphics,gpuModes}.ts`, `components/WindowFrame.tsx` | `main.ts` rewritten: no library server, no Discord, no Cloudflare Access. IPC names are `turbodocs:*`, the bridge is `window.turbodocsDesktop`. |
 | `editions`, `settings-shell`, `android-shell` | not used | TurboDocs has app modules instead of editions (see below). |
