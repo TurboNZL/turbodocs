@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { Section } from '../components/Section.tsx';
+import { AppearancePicker } from '../components/AppearancePicker.tsx';
 import { AppsTab } from '../components/AppsTab.tsx';
 import { GuidesTab } from '../components/GuidesTab.tsx';
 import { ThisApp } from '../components/ThisApp.tsx';
@@ -15,7 +15,7 @@ export function SettingsPage() {
       <div role="tablist" aria-label="Settings sections" className="tabs">
         {TABS.map((t) => <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} onClick={() => setParams({ tab: t.id }, { replace: true })}>{t.label}</button>)}
       </div>
-      {tab === 'look' && <Section title="Look"><turbo-themes-picker variant="tiles"></turbo-themes-picker></Section>}
+      {tab === 'look' && <AppearancePicker />}
       {tab === 'apps' && <AppsTab />}
       {tab === 'guides' && <GuidesTab />}
       {tab === 'app' && <ThisApp />}
