@@ -1,0 +1,18 @@
+# Checks on every push to main only (other branches are not built): typecheck, tests and the web build.
+name: Check
+on:
+  push:
+    branches: [main]
+jobs:
+  ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --ignore-scripts
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+      - run: pnpm --filter @turbodocs/web build

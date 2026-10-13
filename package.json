@@ -1,0 +1,15 @@
+{
+  "name": "turbodocs",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "TurboDocs: documents, spreadsheets and presentations as small apps that install into one themed shell",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter @turbodocs/web dev",
+    "build": "pnpm --filter @turbodocs/web build && pnpm --filter @turbodocs/electron build",
+    "start": "pnpm --filter @turbodocs/web build && pnpm --filter @turbodocs/electron start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}
