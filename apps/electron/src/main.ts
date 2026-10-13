@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
-import { dirname, join, resolve } from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
+import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { findWebDir, loadDesktopConfig, loadUpdateToken, saveDesktopConfig, saveUpdateToken } from './desktopConfig.ts';
 import { startStaticServer } from './staticServer.ts';
@@ -109,6 +109,12 @@ function openWindow() {
   // anything that is not this app opens in the user's browser instead of inside the app
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) void shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(origin)) { e.preventDefault(); if (/^https?:/.test(url)) void shell.openExternal(url); } });
+  win.on('close', (e) => {
+    if (!dirty) return;
+    e.preventDefault();
+    void dialog.showMessageBox(win!, { type: 'warning', buttons: ['Discard changes', 'Keep editing'], defaultId: 1, cancelId: 1, message: 'This document has unsaved changes.', detail: 'Closing now loses them.' })
+      .then((r) => { if (r.response === 0) { dirty = false; win?.close(); } });
+  });
   win.on('closed', () => { win = null; });
   // the page asks for the files that were waiting once it is listening (see lib/settings.ts onOpenFile)
   win.webContents.once('did-finish-load', () => setTimeout(() => void graphics().then((g) => console.log(`[turbodocs] graphics: ${g.summary}${g.hardware ? '' : '. If your computer has a GPU, see Settings > This app > Graphics start-up.'}`)), 2500));
@@ -147,6 +153,44 @@ ipcMain.handle('turbodocs:read-file', async (_e, path: unknown) => {
   if (s.size > MAX_FILE) throw new Error(`The file is larger than ${MAX_FILE / 1024 / 1024} MB.`);
   return await readFile(path);
 });
+/**
+ * Saving. The page may write only to a file that came through Open / the system / the Save dialog (the same list as reading), and only
+ * to a type some module opens. The old file is copied to <userData>/backups before it is replaced, and the new one is written next to it and
+ * renamed over it, so a crash in the middle never leaves a half-written document.
+ */
+const BACKUPS_KEPT = 60;
+async function backupBeforeOverwrite(path: string) {
+  if (!(await stat(path).then((s) => s.isFile(), () => false))) return;
+  const dir = join(userData(), 'backups');
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await copyFile(path, join(dir, `${stamp}-${basename(path)}`));
+  const old = (await readdir(dir)).sort().slice(0, -BACKUPS_KEPT);
+  await Promise.all(old.map((f) => unlink(join(dir, f)).catch(() => undefined)));
+}
+ipcMain.handle('turbodocs:write-file', async (_e, path: unknown, bytes: unknown) => {
+  if (typeof path !== 'string' || !allowed.has(resolve(path))) throw new Error('That file was not opened or chosen through TurboDocs.');
+  if (!moduleFor(path)) throw new Error('TurboDocs does not save this type of file.');
+  const data = bytes instanceof Uint8Array ? bytes : typeof bytes === 'string' ? Buffer.from(bytes, 'utf8') : null;
+  if (!data) throw new Error('Nothing to save.');
+  if (data.length > MAX_FILE) throw new Error('The document is too large to save.');
+  await backupBeforeOverwrite(path);
+  const tmp = `${path}.turbodocs-tmp`;
+  try { await writeFile(tmp, data); await rename(tmp, path); } catch (e) { await unlink(tmp).catch(() => undefined); throw e; }
+});
+ipcMain.handle('turbodocs:save-dialog', async (_e, suggested: unknown) => {
+  const name = typeof suggested === 'string' && suggested ? basename(suggested) : 'Untitled.docx';
+  const ext = extname(name).slice(1) || 'docx';
+  const r = await dialog.showSaveDialog(win ?? undefined!, { title: 'Save as', defaultPath: name, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+  if (r.canceled || !r.filePath) return null;
+  const path = extname(r.filePath) ? r.filePath : `${r.filePath}.${ext}`;
+  if (!moduleFor(path)) return null;
+  allowed.add(resolve(path));
+  return path;
+});
+/** The page tells us when the document has unsaved changes; closing the window then asks first. */
+let dirty = false;
+ipcMain.on('turbodocs:set-dirty', (_e, on: unknown) => { dirty = on === true; });
 ipcMain.handle('turbodocs:graphics', () => graphics());
 ipcMain.handle('turbodocs:gpu-get', () => { const c = loadDesktopConfig(userData()); return { mode: c.gpuMode, auto: c.gpuAuto, running: gpuStart.id, modes: GPU_MODES.map(({ id, label, hint }) => ({ id, label, hint })) }; });
 ipcMain.handle('turbodocs:gpu-report', async () => {
@@ -186,8 +230,10 @@ function shortcuts(w: BrowserWindow) {
     const wc = w.webContents;
     const key = input.key.toLowerCase();
     const stop = () => e.preventDefault();
-    if (mod && key === 'r') { stop(); if (input.shift) wc.reloadIgnoringCache(); else wc.reload(); }
-    else if (key === 'f5') { stop(); wc.reload(); }
+    // a reload would throw away unsaved changes: ask first
+    const reload = (hard: boolean) => { if (dirty && dialog.showMessageBoxSync(w, { type: 'warning', buttons: ['Discard changes', 'Keep editing'], defaultId: 1, cancelId: 1, message: 'This document has unsaved changes.', detail: 'Reloading now loses them.' }) !== 0) return; dirty = false; if (hard) wc.reloadIgnoringCache(); else wc.reload(); };
+    if (mod && key === 'r') { stop(); reload(input.shift); }
+    else if (key === 'f5') { stop(); reload(false); }
     else if (mod && input.shift && key === 'i') { stop(); wc.toggleDevTools(); }
     else if (key === 'f12') { stop(); wc.toggleDevTools(); }
     else if (key === 'f11') { stop(); w.setFullScreen(!w.isFullScreen()); }

@@ -10,6 +10,12 @@ export interface TurboDocsDesktop {
   setModule(id: string, on: boolean): Promise<ModuleInfo[]>;
   openDialog(): Promise<OpenRequest[]>;
   takePending(): Promise<OpenRequest[]>;
+  /** replaces a file that was opened or chosen with Save as (the old one is copied to the app's backups first); text is saved as UTF-8 */
+  writeFile(path: string, bytes: Uint8Array | string): Promise<void>;
+  /** the Save as dialog; null when cancelled */
+  saveDialog(suggestedName: string): Promise<string | null>;
+  /** tells the window whether there are unsaved changes (closing then asks first) */
+  setDirty(on: boolean): void;
   /** the bytes of a file that was opened through TurboDocs (the main process refuses any other path) */
   readFile(path: string): Promise<Uint8Array>;
   onOpen(cb: (r: OpenRequest) => void): () => void;

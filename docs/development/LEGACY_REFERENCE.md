@@ -52,21 +52,23 @@ Menus: [File](reference/legacy-python/menu-file.png), [Format](reference/legacy-
 Word's Heading 4 to 6 map to Heading 3. Defaults from `prefs.py`: column 760 px, margins 0, document font Carlito (metric-compatible with Calibri), 11 pt, zoom 100 %, backups after 1500 ms.
 
 ## Where the new editor stands against it
-Updated as the editor is built; "not yet" means not started.
+Checked against the screenshots above by running the real app (Electron under Xvfb) and comparing.
 
 | Legacy feature | New app |
 |---|---|
-| Pageless canvas on the theme background, 760 px column | not yet (the viewer still shows a white sheet) |
-| Toolbar in the same order, split colour buttons, editable size | not yet |
-| Paragraph styles with the table's values | not yet |
-| Status bar: word count, zoom slider | not yet |
-| Dashboard with New / New Markdown / Open / recent cards | partly: Home has Open and the apps; no New buttons or recent cards |
-| Width popup (width, margins) | not yet |
-| Menu bar | not yet |
-| Find and replace, word count dialog, emoji, date | not yet |
-| Document tabs panel and outline | not yet |
-| Image resize and crop, table column dragging, merge and split | not yet |
-| Crash backups after 1.5 s idle | not yet |
-| Markdown view that never touches the docx | not yet |
-| Preferences dialog | Settings page: appearance (mock-page picker), apps, guides, this app; no document defaults |
+| Pageless canvas on the theme background, centred column | done (`.docx`); default width 760 px |
+| Toolbar in the same order, split colour buttons, editable size | done, one row at 1280 px. No strikethrough or emoji button (the legacy toolbar had no strikethrough; emoji is not built) |
+| Paragraph styles with the table's values | done: Normal, Title, Subtitle, Heading 1 to 3 (+ bulleted and numbered list buttons) |
+| Status bar: word count (selection-aware), zoom slider | done; Ctrl + wheel zooms too |
+| Dashboard with New / New Markdown / Open / recent cards | partly: Home has New document, New Markdown, Open a file and the apps; no recent-documents cards |
+| Width popup (width, margins) | width only (480 to 1200 px); no margins |
+| Menu bar (File, Edit, View, Insert, Format, Tools) | not yet: Save, Save as and "Original view" are buttons on the document header; table operations are in the Table menu |
+| Find and replace, word count dialog, emoji, date, Paste as plain text | not yet |
+| Document tabs panel (☰) and outline | not yet |
+| Images: insert; click to select, drag to resize, crop | insert only (size kept in the file); no resize handles, no crop |
+| Tables: insert, rows and columns, merge and split, cell colour, drag column borders | done (column borders are draggable); merged cells survive a save |
+| Crash backups after 1.5 s idle | not yet; instead the original file is copied to the app's backups folder before every overwrite |
+| Markdown separate from the docx | `.md` and `.txt` are edited as plain text and saved exactly (line endings kept); `.md` has a live preview. No rich Markdown editing |
+| Preferences dialog (document defaults, editing options) | Settings page: appearance, apps, guides, this app; no document defaults |
 | Per-document paragraph styles ("update to match selection") | not yet |
+| Google-Docs shortcuts | those TipTap provides: Ctrl+B/I/U/Z, Ctrl+Shift+L/E/R/J (align), Ctrl+Shift+7/8 (lists). Ctrl+K, Ctrl+\, Ctrl+Alt+0-3, Ctrl+F/H are not bound |

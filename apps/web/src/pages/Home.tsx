@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { FileText, FolderOpen, Presentation, Table2 } from 'lucide-react';
+import { FilePlus, FileText, FolderOpen, Presentation, Table2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { desktop, type ModuleInfo, type OpenRequest } from '../lib/settings.ts';
 import { Section } from '../components/Section.tsx';
-import { addOpened, useOpened, viewUrl } from '../lib/opened.ts';
+import { addOpened, editUrl, useOpened } from '../lib/opened.ts';
 
 const ICONS: Record<string, typeof FileText> = { docs: FileText, sheets: Table2, slides: Presentation };
 
@@ -14,20 +14,22 @@ export function HomePage() {
   const opened = useOpened();
   const navigate = useNavigate();
   useEffect(() => { void d?.modules().then(setMods); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const open = () => void d?.openDialog().then((rs) => { rs.forEach(addOpened); const first = rs.find((r: OpenRequest) => r.module && r.installed); if (first) navigate(viewUrl(first.path)); });
+  const open = () => void d?.openDialog().then((rs) => { rs.forEach(addOpened); const first = rs.find((r: OpenRequest) => r.module && r.installed); if (first) navigate(editUrl(first.path)); });
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5 p-6">
       <h1 className="text-2xl font-bold">TurboDocs</h1>
       <div className="flex flex-wrap items-center gap-2">
-        <button className="btn btn-accent inline-flex items-center gap-2" disabled={!d} onClick={open}><FolderOpen size={16} />Open a file</button>
-        {!d && <span className="text-sm text-muted">Opening files works in the desktop app.</span>}
+        <Link className="btn btn-accent inline-flex items-center gap-2" to="/edit?new=docx"><FilePlus size={16} />New document</Link>
+        <Link className="btn inline-flex items-center gap-2" to="/edit?new=md"><FilePlus size={16} />New Markdown</Link>
+        <button className="btn inline-flex items-center gap-2" disabled={!d} onClick={open}><FolderOpen size={16} />Open a file</button>
+        {!d && <span className="text-sm text-muted">Opening and saving files works in the desktop app.</span>}
       </div>
       {opened.length > 0 && (
         <Section title="Opened this session">
           <ul className="space-y-2 text-sm">
             {opened.map((o, i) => (
               <li key={`${o.path}-${i}`} className="flex flex-wrap items-baseline gap-2">
-                {o.module && o.installed ? <Link className="break-all text-accent underline" to={viewUrl(o.path)}>{o.path}</Link> : <code className="select-all break-all">{o.path}</code>}
+                {o.module && o.installed ? <Link className="break-all text-accent underline" to={editUrl(o.path)}>{o.path}</Link> : <code className="select-all break-all">{o.path}</code>}
                 {!(o.module && o.installed) && <span className="text-muted">{o.module ? `→ needs the ${o.module} module (Settings › Apps)` : '→ no module opens this type'}</span>}
               </li>
             ))}
