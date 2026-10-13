@@ -17,7 +17,7 @@ export interface AppModule {
 }
 
 export const MODULES: AppModule[] = [
-  { id: 'docs', title: 'Docs', description: 'Word documents, Markdown and text.', extensions: ['.docx', '.md', '.markdown', '.txt'], available: false, defaultInstalled: true },
+  { id: 'docs', title: 'Docs', description: 'Word documents, Markdown and text.', extensions: ['.docx', '.md', '.markdown', '.txt'], available: true, defaultInstalled: true },
   { id: 'sheets', title: 'Sheets', description: 'Excel workbooks and CSV.', extensions: ['.xlsx', '.csv'], available: false, defaultInstalled: false },
   { id: 'slides', title: 'Slides', description: 'PowerPoint presentations.', extensions: ['.pptx'], available: false, defaultInstalled: false },
 ];

@@ -1,23 +1,20 @@
 import { useEffect, useState } from 'react';
 import { FileText, FolderOpen, Presentation, Table2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { desktop, type ModuleInfo, type OpenRequest } from '../lib/settings.ts';
 import { Section } from '../components/Section.tsx';
+import { addOpened, useOpened, viewUrl } from '../lib/opened.ts';
 
 const ICONS: Record<string, typeof FileText> = { docs: FileText, sheets: Table2, slides: Presentation };
 
-/** What the shell does today: take a file from Open, a drop or the system, and hand it to the module for its type. The modules themselves are not built yet. */
+/** Open a file (the dialog here, or the system via the layout) and see the apps. Files go to the module for their type (pages/View.tsx). */
 export function HomePage() {
   const d = desktop();
   const [mods, setMods] = useState<ModuleInfo[]>([]);
-  const [opened, setOpened] = useState<OpenRequest[]>([]);
-  useEffect(() => {
-    if (!d) return;
-    void d.modules().then(setMods);
-    void d.takePending().then((r) => setOpened((o) => [...r, ...o]));
-    return d.onOpen((r) => setOpened((o) => [r, ...o]));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const open = () => void d?.openDialog().then((r) => setOpened((o) => [...r, ...o]));
+  const opened = useOpened();
+  const navigate = useNavigate();
+  useEffect(() => { void d?.modules().then(setMods); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const open = () => void d?.openDialog().then((rs) => { rs.forEach(addOpened); const first = rs.find((r: OpenRequest) => r.module && r.installed); if (first) navigate(viewUrl(first.path)); });
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <h1 className="text-2xl font-bold">TurboDocs</h1>
@@ -26,12 +23,12 @@ export function HomePage() {
         {!d && <span className="text-sm text-muted">Opening files works in the desktop app.</span>}
       </div>
       {opened.length > 0 && (
-        <Section title="Opened">
+        <Section title="Opened this session">
           <ul className="space-y-2 text-sm">
             {opened.map((o, i) => (
               <li key={`${o.path}-${i}`} className="flex flex-wrap items-baseline gap-2">
-                <code className="select-all break-all">{o.path}</code>
-                <span className="text-muted">{o.module ? (o.installed ? `→ ${o.module} module is installed, but has no viewer yet` : `→ needs the ${o.module} module (Settings › Apps)`) : '→ no module opens this type'}</span>
+                {o.module && o.installed ? <Link className="break-all text-accent underline" to={viewUrl(o.path)}>{o.path}</Link> : <code className="select-all break-all">{o.path}</code>}
+                {!(o.module && o.installed) && <span className="text-muted">{o.module ? `→ needs the ${o.module} module (Settings › Apps)` : '→ no module opens this type'}</span>}
               </li>
             ))}
           </ul>

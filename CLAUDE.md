@@ -17,6 +17,7 @@ This app is pinned to TurboNZL/turboengine (see `.turboengine.json`; `docs/devel
 | Stack | Rewritten as an Electron + React + Tailwind app on TurboEngine; Python/Qt is retired. The old app is the branch `legacy/python` (identical to the last Python `main`, e14febc). |
 | Shape | One shell with separate apps (modules) inside: Docs (docx, md, txt), Sheets (xlsx, csv), Slides (pptx). Modules can be installed and removed from inside the app. Opening a file (Open, "Open with", middle-click from a file manager) hands it to the module for its type. The user also wants to be able to set TurboDocs/its modules as the default app for those types. |
 | Themes | turbothemes (in the engine repo) for the look, because the owner wants every project to look consistent. Stock `<turbo-themes-picker>`, one side-bar layout for now. |
+| Rewrite vs Python | Decided not to combine the Python app with Electron (a bundled runtime per module, an IPC boundary, no font gain: Chromium already uses system fonts). File handling is rewritten in JavaScript. If a format's fidelity turns out too poor, a Python helper for that one format is the fallback. |
 | Repos | One repo for now. Separate repos only if the modules need separate installers; keep module code behind the registry so that stays possible. |
 
 ## Repo layout
@@ -30,6 +31,8 @@ docs/guides     user guides (bundled into Settings > Guides)    docs/development
 ## What exists and is tested
 - Verified in a real Chromium (headless, built client): the themed shell renders, `<turbo-themes-picker>` registers and lists palettes and styles, a chosen look (Nord + Windows 11) survives a reload, the Settings tabs render. Typecheck and build of both packages pass.
 - Verified in the real Electron binary under Xvfb (software rendering): window opens, the client loads from 127.0.0.1:47815, the preload bridge and IPC answer (modules, updates = disabled in a dev run, graphics), and a second launch with a file path (`electron . file.docx`) forwards it to the running window, which lists it with the module it needs.
+- Docs viewer (real Electron run, Xvfb): a python-docx file (heading, bold/italic/colour, bullets, table, image, Unicode) renders correctly; `.md` renders through our safe renderer (a `<script>` in it shows as text); `.txt` shows as is. The page cannot read files it was not given: `/etc/passwd` and a `../` path are refused by the main process (allow-list of opened paths). With the bundled fonts the page makes no external requests.
+- NOT verified (Docs): documents written by Word or LibreOffice (only one generated file was tried), large or complex files (footnotes, text boxes, tracked changes, embedded fonts), headers/footers (switched off), links in documents opening in the browser.
 - NOT verified: the self-updater against a real release (no release exists yet), the .deb/AppImage/NSIS packaging (never built here), CI workflows (never run), custom window frame in a real window, Wayland/GPU paths, macOS.
 
 ## Hard-won gotchas
@@ -43,13 +46,18 @@ docs/guides     user guides (bundled into Settings > Guides)    docs/development
 - A second launch must not start up: `app.quit()` is asynchronous, so without the `primary` guard in `main.ts` the second process found the port taken and opened an unclosable error dialog. The engine's `window-frame/main.ts` has the same pattern and should get the same guard.
 - The "Automatic" graphics mode relaunches the app up to five times when there is no GPU (a headless sandbox): set `TURBODOCS_SOFTWARE_RENDERING=1` when driving the app from a script.
 
+- Word draws bullets with private-use Symbol/Wingdings characters (U+F0B7 ...) that Linux lacks: `fixSymbolBullets` in `pages/View.tsx` maps the common ones to Unicode. Other Symbol glyphs fall back to a plain bullet.
+- `apps/web/src/fonts.css` is generated (`node apps/web/scripts/gen-fonts.mjs`, then `pnpm add` the packages it prints). Re-run it after updating turbothemes. pnpm rewrites the lockfile's turbothemes entry back to the SSH form on every `pnpm add`: fix those lines again.
+- The page may read only files that came through Open, the command line or the system (`allowed` in `main.ts`). New features that read files must go through the same list.
+
 ## Open questions / next
 1. Module delivery: how does "install Sheets" get code into the app (download a bundle from releases? separate installers that register with the shell?) and how do file associations follow install/uninstall? Needs a design before any module is built.
-2. First real module: Docs (.docx via a JS library; round-trip fidelity is the risk). Sheets: viewer first (formulas need a calc engine). Slides: rendering is the hard part.
-3. Bundle fonts for offline use (`fonts: 'none'` + @fontsource) and an app icon PNG (build/icon.png is generated from icon.svg, see below).
+2. Docs: the viewer exists (docx-preview, read-only). Next: try real Word/LibreOffice files, then decide how editing and saving a .docx works without losing content (the round-trip is the risk). Sheets: viewer first (formulas need a calc engine). Slides: rendering is the hard part.
+3. Drag-and-drop of files onto the window; file associations ("Open with" entries) are not declared in the installer yet.
 4. Layouts (where pages are listed) are the app's job; only a side bar exists.
 
 ## Session log
+- 2026-10-13: Bundled the theme fonts (offline); built the Docs viewer (.docx via docx-preview, .md, .txt) with a guarded read-file IPC and a `/view` page; fixed missing Symbol bullets.
 - 2026-10-13: CI failed on the duplicate pnpm version (above); removed `version: 10` from `check.yml` and `release.yml`. Not yet seen passing on GitHub.
 - 2026-10-13 (engine fix to port back): `primary` single-instance guard in `apps/electron/src/main.ts`.
 - 2026-10-13: Rewrote the repo on TurboEngine (engine at 6b26f24). Moved the Python app to `legacy/python`. Added the shell, module registry and engine modules as described in `docs/development/ENGINE.md`.

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { findWebDir, loadDesktopConfig, loadUpdateToken, saveDesktopConfig, saveUpdateToken } from './desktopConfig.ts';
 import { startStaticServer } from './staticServer.ts';
@@ -28,8 +29,15 @@ if (!primary) app.quit();
 
 /** Files the system asked us to open before the window was ready to hear about it. */
 const pending: string[] = [];
+/**
+ * The only files the page may read: ones that arrived through Open, the command line or the system. The page is ordinary web content, so it
+ * must not be able to ask for any path on the disk.
+ */
+const allowed = new Set<string>();
+const MAX_FILE = 200 * 1024 * 1024;
 const openRequest = (path: string) => {
   const m = moduleFor(path);
+  if (m) allowed.add(resolve(path));
   const desk = loadDesktopConfig(userData());
   return { path, module: m?.id ?? null, installed: m ? isInstalled(m, desk.modules) : false };
 };
@@ -131,6 +139,13 @@ ipcMain.handle('turbodocs:open-dialog', async () => {
     filters: [{ name: 'Documents', extensions: MODULES.flatMap((m) => m.extensions.map((x) => x.slice(1))) }, ...MODULES.map((m) => ({ name: m.title, extensions: m.extensions.map((x) => x.slice(1)) })), { name: 'All files', extensions: ['*'] }],
   });
   return r.canceled ? [] : r.filePaths.map(openRequest);
+});
+ipcMain.handle('turbodocs:read-file', async (_e, path: unknown) => {
+  if (typeof path !== 'string' || !allowed.has(resolve(path))) throw new Error('That file was not opened through TurboDocs.');
+  const s = await stat(path);
+  if (!s.isFile()) throw new Error('Not a file.');
+  if (s.size > MAX_FILE) throw new Error(`The file is larger than ${MAX_FILE / 1024 / 1024} MB.`);
+  return await readFile(path);
 });
 ipcMain.handle('turbodocs:graphics', () => graphics());
 ipcMain.handle('turbodocs:gpu-get', () => { const c = loadDesktopConfig(userData()); return { mode: c.gpuMode, auto: c.gpuAuto, running: gpuStart.id, modes: GPU_MODES.map(({ id, label, hint }) => ({ id, label, hint })) }; });

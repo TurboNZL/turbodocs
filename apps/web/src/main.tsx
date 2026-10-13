@@ -1,4 +1,5 @@
 import { startAppearance } from './lib/appearance.ts'; // first: the saved look is applied before anything paints
+import './fonts.css';
 import './index.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

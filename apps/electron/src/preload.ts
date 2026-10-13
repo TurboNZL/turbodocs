@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('turbodocsDesktop', {
   modules: () => ipcRenderer.invoke('turbodocs:modules') as Promise<unknown>,
   setModule: (id: string, on: boolean) => ipcRenderer.invoke('turbodocs:module-set', id, on) as Promise<unknown>,
   openDialog: () => ipcRenderer.invoke('turbodocs:open-dialog') as Promise<unknown>,
+  readFile: (path: string) => ipcRenderer.invoke('turbodocs:read-file', path) as Promise<Uint8Array>,
   takePending: () => ipcRenderer.invoke('turbodocs:take-pending') as Promise<unknown>,
   onOpen: (cb: (r: unknown) => void) => { const h = (_e: unknown, r: unknown) => cb(r); ipcRenderer.on('turbodocs:open', h); return () => { ipcRenderer.removeListener('turbodocs:open', h); }; },
   updates: {

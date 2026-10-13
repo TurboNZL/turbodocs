@@ -1,12 +1,24 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Home, Settings } from 'lucide-react';
 import { WindowFrame } from './WindowFrame.tsx';
 import { cn } from '../lib/cn.ts';
+import { desktop, type OpenRequest } from '../lib/settings.ts';
+import { addOpened, viewUrl } from '../lib/opened.ts';
 
 const NAV = [{ to: '/', label: 'Home', icon: Home, end: true }, { to: '/settings', label: 'Settings', icon: Settings, end: false }];
 
 /** Window frame, a side bar (the themes' `.bt-side` / `.bt-nav`) and the page area (`.bt-page` animates on a page change). */
 export function Layout() {
+  const navigate = useNavigate();
+  // a file arrives from Open, the command line or the system: show it in its module when that is installed, otherwise Home says what is missing
+  useEffect(() => {
+    const d = desktop();
+    if (!d) return;
+    const take = (r: OpenRequest) => { addOpened(r); navigate(r.module && r.installed ? viewUrl(r.path) : '/'); };
+    void d.takePending().then((rs) => rs.forEach(take));
+    return d.onOpen(take);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="flex h-full flex-col bg-bg text-fg">
       <WindowFrame />
