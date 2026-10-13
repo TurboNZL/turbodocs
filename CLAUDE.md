@@ -16,7 +16,7 @@ This app is pinned to TurboNZL/turboengine (see `.turboengine.json`; `docs/devel
 |---|---|
 | Stack | Rewritten as an Electron + React + Tailwind app on TurboEngine; Python/Qt is retired. The old app is the branch `legacy/python` (identical to the last Python `main`, e14febc). |
 | Shape | One shell with separate apps (modules) inside: Docs (docx, md, txt), Sheets (xlsx, csv), Slides (pptx). Modules can be installed and removed from inside the app. Opening a file (Open, "Open with", middle-click from a file manager) hands it to the module for its type. The user also wants to be able to set TurboDocs/its modules as the default app for those types. |
-| Themes | turbothemes (in the engine repo) for the look, because the owner wants every project to look consistent. Stock `<turbo-themes-picker>`, one side-bar layout for now. |
+| Themes | turbothemes (in the engine repo) for the look, because the owner wants every project to look consistent. Own picker (`components/AppearancePicker.tsx`) on the headless controller with a mock-page preview; the stock element only for wallpaper/updates. One side-bar layout for now. |
 | Rewrite vs Python | Decided not to combine the Python app with Electron (a bundled runtime per module, an IPC boundary, no font gain: Chromium already uses system fonts). File handling is rewritten in JavaScript. If a format's fidelity turns out too poor, a Python helper for that one format is the fallback. |
 | Editor | TipTap (ProseMirror) for `.docx`; our own importer (`editor/docxImport.ts`, JSZip + @xmldom/xmldom) reads the file's XML, our own exporter (`editor/docxExport.ts`, the `docx` library) writes a NEW file from the editor's content (it does not patch the original). What cannot be represented is listed in `warnings` on import and the first overwrite asks. `.md`/`.txt` are plain-text editing (byte-exact, line endings kept), not rich. |
 | Layout source | The original Python app is the reference for layout and intent: `docs/development/LEGACY_REFERENCE.md` (real screenshots + status table). Check it before changing the editor. |
@@ -25,7 +25,7 @@ This app is pinned to TurboNZL/turboengine (see `.turboengine.json`; `docs/devel
 
 ## Repo layout
 ```
-apps/web        React client (pages: Home, Settings; components: Layout, WindowFrame, AppsTab, GuidesTab, AppSettings, ThisApp)
+apps/web        React client (pages: Home, Edit, View, Settings; editor/: DocPane, TextPane, Toolbar, StatusBar, docxImport, docxExport, extensions; components: Layout, WindowFrame, AppearancePicker, AppsTab, GuidesTab, AppSettings, ThisApp)
 apps/electron   main.ts (window, IPC, file opening), modules.ts (registry), desktopConfig.ts, staticServer.ts, updater*.ts, graphics/gpuModes.ts, preload.ts
 docs/guides     user guides (bundled into Settings > Guides)    docs/development  internals
 .github/workflows  release (vYYYY.M.N on every merge to main), check, auto-pr
