@@ -36,6 +36,7 @@ docs/guides     user guides (bundled into Settings > Guides)    docs/development
 - `pnpm install --ignore-scripts` (CI) skips the Electron binary: run a plain `pnpm install` locally.
 - turbothemes must be installed as `git+https://github.com/TurboNZL/turboengine.git#path:/themes`; the `github:` shorthand records an SSH address CI cannot clone.
 - pnpm writes the turbothemes entry in `pnpm-lock.yaml` as an SSH address (`git@github.com:...`) even from the `git+https` specifier; it was edited by hand to the https form (frozen install re-verified). After any `pnpm add`/`update` that touches the lockfile, check those three lines again.
+- `pnpm/action-setup@v4` fails if the version is given both in the workflow (`with: version`) and in `package.json` `packageManager`. TurboDocs keeps it only in `packageManager`. The engine's `release-pipeline` workflows pin `version: 10`, so any app that sets `packageManager` hits this; port the note back.
 - The window loads the client from `http://127.0.0.1:47815` (fixed port) so its storage keeps the user's look. Change it only with `TURBODOCS_DESKTOP_PORT`.
 - `auto-pr.yml` ignores `legacy/**` so the legacy branch never gets a PR against main.
 
@@ -49,5 +50,6 @@ docs/guides     user guides (bundled into Settings > Guides)    docs/development
 4. Layouts (where pages are listed) are the app's job; only a side bar exists.
 
 ## Session log
+- 2026-10-13: CI failed on the duplicate pnpm version (above); removed `version: 10` from `check.yml` and `release.yml`. Not yet seen passing on GitHub.
 - 2026-10-13 (engine fix to port back): `primary` single-instance guard in `apps/electron/src/main.ts`.
 - 2026-10-13: Rewrote the repo on TurboEngine (engine at 6b26f24). Moved the Python app to `legacy/python`. Added the shell, module registry and engine modules as described in `docs/development/ENGINE.md`.
