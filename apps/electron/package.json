@@ -1,0 +1,54 @@
+{
+  "name": "@turbodocs/electron",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "TurboDocs desktop shell: documents, spreadsheets and presentations as modules in one themed window",
+  "author": "TurboNZL",
+  "homepage": "https://github.com/TurboNZL/turbodocs",
+  "main": "dist/main.mjs",
+  "desktopName": "turbodocs.desktop",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/build.mjs && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dist:publish": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder --publish always",
+    "dist": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder",
+    "dist:dir": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.5",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "build": {
+    "appId": "app.turbodocs.desktop",
+    "productName": "TurboDocs",
+    "directories": { "output": "release", "buildResources": "build" },
+    "files": ["dist/**", "package.json"],
+    "extraResources": [{ "from": "../web/dist", "to": "web" }],
+    "publish": [{ "provider": "github", "owner": "TurboNZL", "repo": "turbodocs", "releaseType": "release" }],
+    "artifactName": "turbodocs-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "executableName": "turbodocs",
+      "maintainer": "TurboNZL <noreply@turbodocs.app>",
+      "synopsis": "Documents, spreadsheets and presentations in one themed app",
+      "desktop": { "entry": { "StartupWMClass": "turbodocs" } }
+    },
+    "deb": { "packageName": "turbodocs", "artifactName": "turbodocs-${version}-linux-${arch}.${ext}" },
+    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "mac": { "target": ["dmg"], "category": "public.app-category.productivity", "icon": "build/icon.png" },
+    "nsis": { "artifactName": "turbodocs-${version}-windows-${arch}-setup.${ext}", "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}

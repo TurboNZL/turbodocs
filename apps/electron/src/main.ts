@@ -1,0 +1,217 @@
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { findWebDir, loadDesktopConfig, loadUpdateToken, saveDesktopConfig, saveUpdateToken } from './desktopConfig.ts';
+import { startStaticServer } from './staticServer.ts';
+import { filesFromArgv, isInstalled, MODULES, moduleFor } from './modules.ts';
+import { Updates } from './updater.ts';
+import { describeGraphics, type Graphics } from './graphics.ts';
+import { activeMode, GPU_MODES, nextAutoStep } from './gpuModes.ts';
+
+/**
+ * The window shows the built web client from a tiny local server on 127.0.0.1 (a fixed port, so the window's storage, which holds the
+ * chosen theme, is the same on every launch). The window chrome, updates and graphics start-up are the engine's window-frame and
+ * updaters modules; what is TurboDocs' own is the module registry (modules.ts) and the file-open plumbing below.
+ */
+const here = dirname(fileURLToPath(import.meta.url));
+let server: { port: number; close(): Promise<void> } | null = null;
+let win: BrowserWindow | null = null;
+const updates = new Updates(app.isPackaged, (state) => win?.webContents.send('turbodocs:update', state));
+
+// the desktop file's name is the window's identity on Wayland (its app id): without this the launcher's icon and the window do not match
+if (process.platform === 'linux') app.setDesktopName('turbodocs.desktop');
+
+// A second launch hands its arguments to the running app (second-instance below) and exits. app.quit() is asynchronous, so startup must
+// not go on in the meantime: it would find the port taken and open an error dialog nobody can dismiss.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+
+/** Files the system asked us to open before the window was ready to hear about it. */
+const pending: string[] = [];
+const openRequest = (path: string) => {
+  const m = moduleFor(path);
+  const desk = loadDesktopConfig(userData());
+  return { path, module: m?.id ?? null, installed: m ? isInstalled(m, desk.modules) : false };
+};
+function openFiles(paths: string[]) {
+  const ready = !!win && !win.webContents.isLoading();
+  for (const p of paths) { if (ready) win!.webContents.send('turbodocs:open', openRequest(p)); else pending.push(p); }
+}
+app.on('second-instance', (_e, argv) => {
+  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  openFiles(filesFromArgv(argv, app.isPackaged));
+});
+app.on('open-file', (e, path) => { e.preventDefault(); openFiles([path]); }); // macOS
+pending.push(...filesFromArgv(process.argv, app.isPackaged));
+
+const gpuChoice = loadDesktopConfig(app.getPath('userData'));
+const gpuStart = activeMode(gpuChoice.gpuMode === 'auto' && gpuChoice.gpuAuto.done ? { mode: 'auto', auto: { step: gpuChoice.gpuAuto.step, done: true } } : { mode: gpuChoice.gpuMode, auto: gpuChoice.gpuAuto }, process.env.XDG_SESSION_TYPE);
+if (process.platform === 'linux') {
+  // Chromium's block list leaves GPU painting off on many Linux drivers: ask for it. A driver that really cannot do it still falls back by
+  // itself, graphics() below reports what happened, and "Automatic" then tries the next way to start the graphics (see gpuModes.ts).
+  if (gpuStart.features?.length) app.commandLine.appendSwitch('enable-features', gpuStart.features.join(','));
+  // Chromium on Wayland cannot use Vulkan; the modes name their own ANGLE back end. Vulkan stays off except in the one mode that asks for it.
+  if (!gpuStart.features?.includes('Vulkan')) app.commandLine.appendSwitch('disable-features', 'Vulkan');
+  if (gpuStart.software) app.disableHardwareAcceleration();
+  else for (const [name, value] of gpuStart.switches) app.commandLine.appendSwitch(name, value);
+}
+// escape hatch for a driver that crashes the GPU process: TURBODOCS_SOFTWARE_RENDERING=1 pnpm start
+if (process.env.TURBODOCS_SOFTWARE_RENDERING) app.disableHardwareAcceleration();
+let gpuCrashes = 0;
+app.on('child-process-gone', (_e, d) => { if (d.type === 'GPU') { gpuCrashes++; console.warn(`[turbodocs] the GPU process stopped (${d.reason}, code ${d.exitCode}); crash ${gpuCrashes}`); } });
+
+async function graphics(): Promise<Graphics> {
+  const info = (await app.getGPUInfo('complete').catch(() => app.getGPUInfo('basic').catch(() => null))) as { auxAttributes?: { glRenderer?: string; glImplementationParts?: string }; gpuDevice?: { vendorId?: number }[] } | null;
+  return describeGraphics({
+    features: app.getGPUFeatureStatus() as unknown as Record<string, string>,
+    renderer: info?.auxAttributes?.glRenderer ?? '',
+    glParts: info?.auxAttributes?.glImplementationParts ?? '',
+    vendorIds: (info?.gpuDevice ?? []).map((d) => d.vendorId ?? 0),
+  }, gpuCrashes);
+}
+
+const userData = () => app.getPath('userData');
+
+async function boot(): Promise<void> {
+  const desk = loadDesktopConfig(userData());
+  const webDir = findWebDir(process.resourcesPath, join(here, '../../web/dist'));
+  if (!webDir) throw new Error('The web client has not been built. Run `pnpm --filter @turbodocs/web build` first.');
+  try { server = await startStaticServer(webDir, desk.port); }
+  catch (e) {
+    throw new Error((e as NodeJS.ErrnoException).code === 'EADDRINUSE'
+      ? `Port ${desk.port} is already in use. Close whatever uses it, or set TURBODOCS_DESKTOP_PORT to another port (the app remembers its settings per port).`
+      : (e as Error).message);
+  }
+}
+
+function openWindow() {
+  const custom = loadDesktopConfig(userData()).customFrame;
+  win = new BrowserWindow({
+    frame: !custom, autoHideMenuBar: true,
+    width: 1280, height: 840, minWidth: 420, minHeight: 520, backgroundColor: '#0b0b10', show: false, title: 'TurboDocs',
+    icon: join(here, '../build/icon.png'),
+    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
+  });
+  win.removeMenu();
+  win.once('ready-to-show', () => win?.show());
+  win.on('maximize', () => win?.webContents.send('turbodocs:window-state', true));
+  win.on('unmaximize', () => win?.webContents.send('turbodocs:window-state', false));
+  shortcuts(win);
+  const origin = `http://127.0.0.1:${server!.port}`;
+  // anything that is not this app opens in the user's browser instead of inside the app
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) void shell.openExternal(url); return { action: 'deny' }; });
+  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(origin)) { e.preventDefault(); if (/^https?:/.test(url)) void shell.openExternal(url); } });
+  win.on('closed', () => { win = null; });
+  // the page asks for the files that were waiting once it is listening (see lib/settings.ts onOpenFile)
+  win.webContents.once('did-finish-load', () => setTimeout(() => void graphics().then((g) => console.log(`[turbodocs] graphics: ${g.summary}${g.hardware ? '' : '. If your computer has a GPU, see Settings > This app > Graphics start-up.'}`)), 2500));
+  void win.loadURL(origin);
+}
+
+const moduleList = () => {
+  const saved = loadDesktopConfig(userData()).modules;
+  return MODULES.map((m) => ({ ...m, installed: isInstalled(m, saved) }));
+};
+
+ipcMain.on('turbodocs:info', (e) => {
+  e.returnValue = { customFrame: loadDesktopConfig(userData()).customFrame, version: app.getVersion(), platform: process.platform, desktopEnv: process.env.XDG_CURRENT_DESKTOP ?? '', port: server?.port ?? 0 };
+});
+ipcMain.handle('turbodocs:modules', () => moduleList());
+ipcMain.handle('turbodocs:module-set', (_e, id: unknown, on: unknown) => {
+  const m = MODULES.find((x) => x.id === id);
+  if (!m || typeof on !== 'boolean') return moduleList();
+  if (!m.available) return moduleList(); // no code yet: nothing to install
+  const saved = loadDesktopConfig(userData()).modules;
+  saveDesktopConfig(userData(), { modules: { ...saved, [m.id]: on } });
+  return moduleList();
+});
+ipcMain.handle('turbodocs:take-pending', () => pending.splice(0).map(openRequest));
+ipcMain.handle('turbodocs:open-dialog', async () => {
+  const r = await dialog.showOpenDialog(win ?? undefined!, {
+    title: 'Open', properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Documents', extensions: MODULES.flatMap((m) => m.extensions.map((x) => x.slice(1))) }, ...MODULES.map((m) => ({ name: m.title, extensions: m.extensions.map((x) => x.slice(1)) })), { name: 'All files', extensions: ['*'] }],
+  });
+  return r.canceled ? [] : r.filePaths.map(openRequest);
+});
+ipcMain.handle('turbodocs:graphics', () => graphics());
+ipcMain.handle('turbodocs:gpu-get', () => { const c = loadDesktopConfig(userData()); return { mode: c.gpuMode, auto: c.gpuAuto, running: gpuStart.id, modes: GPU_MODES.map(({ id, label, hint }) => ({ id, label, hint })) }; });
+ipcMain.handle('turbodocs:gpu-report', async () => {
+  const g = await graphics();
+  const info = await app.getGPUInfo('complete').catch(() => null);
+  return JSON.stringify({ summary: g.summary, detail: g.detail, features: g.features, gpuCrashes: g.gpuCrashes, mode: gpuStart.id, electron: process.versions.electron, chrome: process.versions.chrome, session: { type: process.env.XDG_SESSION_TYPE, desktop: process.env.XDG_CURRENT_DESKTOP, display: process.env.DISPLAY, wayland: process.env.WAYLAND_DISPLAY }, gpuInfo: info }, null, 2);
+});
+ipcMain.on('turbodocs:gpu-page', () => { const w = new BrowserWindow({ width: 1000, height: 800, title: 'Chromium GPU report' }); void w.loadURL('chrome://gpu'); });
+ipcMain.handle('turbodocs:gpu-set', (_e, mode: unknown) => {
+  const id = typeof mode === 'string' && (mode === 'auto' || GPU_MODES.some((m) => m.id === mode)) ? mode : 'auto';
+  saveDesktopConfig(userData(), { gpuMode: id, gpuAuto: { step: 0, done: false } });
+  app.relaunch(); app.exit(0);
+});
+ipcMain.handle('turbodocs:update-has-token', () => !!loadUpdateToken(userData()));
+ipcMain.handle('turbodocs:update-set-token', (_e, t: unknown) => { const v = typeof t === 'string' ? t.trim() : ''; saveUpdateToken(userData(), v); updates.setToken(v); });
+ipcMain.handle('turbodocs:update-state', () => updates.state);
+ipcMain.handle('turbodocs:update-check', () => updates.check());
+ipcMain.on('turbodocs:update-install', () => updates.install());
+ipcMain.on('turbodocs:window', (e, action: string) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return;
+  if (action === 'minimize') w.minimize();
+  else if (action === 'maximize') { if (w.isMaximized()) w.unmaximize(); else w.maximize(); }
+  else if (action === 'close') w.close();
+});
+ipcMain.handle('turbodocs:set-frame', async (_e, on: unknown) => {
+  saveDesktopConfig(userData(), { customFrame: on === true });
+  const r = await dialog.showMessageBox({ type: 'info', buttons: ['Restart now', 'Later'], defaultId: 0, message: 'Window style changed', detail: 'The new window style applies after the app restarts.' });
+  if (r.response === 0) { app.relaunch(); app.quit(); }
+});
+
+/** There is no menu bar (everything it held is in Settings); the shortcuts people expect from it still work. */
+function shortcuts(w: BrowserWindow) {
+  w.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return;
+    const mod = input.control || input.meta;
+    const wc = w.webContents;
+    const key = input.key.toLowerCase();
+    const stop = () => e.preventDefault();
+    if (mod && key === 'r') { stop(); if (input.shift) wc.reloadIgnoringCache(); else wc.reload(); }
+    else if (key === 'f5') { stop(); wc.reload(); }
+    else if (mod && input.shift && key === 'i') { stop(); wc.toggleDevTools(); }
+    else if (key === 'f12') { stop(); wc.toggleDevTools(); }
+    else if (key === 'f11') { stop(); w.setFullScreen(!w.isFullScreen()); }
+    else if (mod && (key === '=' || key === '+')) { stop(); wc.setZoomLevel(wc.getZoomLevel() + 0.5); }
+    else if (mod && key === '-') { stop(); wc.setZoomLevel(wc.getZoomLevel() - 0.5); }
+    else if (mod && key === '0') { stop(); wc.setZoomLevel(0); }
+  });
+}
+
+let closing = false;
+app.on('before-quit', (e) => {
+  if (closing || !server) return;
+  e.preventDefault(); closing = true;
+  void server.close().finally(() => app.exit(0));
+});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('activate', () => { if (!win && server) openWindow(); });
+
+void app.whenReady().then(async () => {
+  if (!primary) return;
+  try { await boot(); } catch (e) { dialog.showErrorBox('TurboDocs cannot start', (e as Error).message); app.exit(1); return; }
+  Menu.setApplicationMenu(null);
+  openWindow();
+  updates.setToken(loadUpdateToken(userData()));
+  updates.start();
+  void settleGraphics();
+});
+
+/**
+ * Automatic mode: a few seconds after the window opened, see whether Chromium really got the GPU. If not, remember the next way to start
+ * the graphics and restart (at most once per start, and only until every mode has been tried); if yes, remember that one and stop looking.
+ */
+async function settleGraphics() {
+  const c = loadDesktopConfig(userData());
+  if (process.platform !== 'linux' || c.gpuMode !== 'auto' || c.gpuAuto.done || process.env.TURBODOCS_SOFTWARE_RENDERING) return;
+  await new Promise((r) => setTimeout(r, 6000));
+  const g = await graphics();
+  const next = nextAutoStep({ mode: 'auto', auto: c.gpuAuto }, g.hardware && g.gpuCrashes === 0, process.env.XDG_SESSION_TYPE);
+  console.log(`[turbodocs] graphics (${gpuStart.id}): ${g.summary}${next.done ? ' - settled' : ' - trying the next mode'}`);
+  saveDesktopConfig(userData(), { gpuAuto: { step: next.step, done: next.done } });
+  if (next.relaunch) { app.relaunch(); app.exit(0); }
+}
