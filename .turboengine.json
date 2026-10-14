@@ -1,10 +1,22 @@
 {
-  "engine": { "repo": "TurboNZL/turboengine", "ref": "6b26f2431b58ea2f1d4cdd196d3860b86b2f736c" },
-  "modules": ["release-pipeline", "updaters", "appearance", "guides-and-docs", "window-frame"],
-  "themes": "on",
+  "engine": {
+    "repo": "TurboNZL/turboengine",
+    "ref": "7dbbe2eb0f35850b83e2c83edae89ca9d144077e"
+  },
+  "modules": [
+    "release-pipeline",
+    "updaters",
+    "appearance",
+    "guides-and-docs",
+    "window-frame",
+    "gpu-modes",
+    "logos"
+  ],
+  "themes": "on (full pack: themes/; the open pack themes-open/ is for apps that are or may be sold)",
   "moved": {
     "modules/window-frame/files/apps/electron/src/main.ts": "apps/electron/src/main.ts (rewritten: no library server, no Discord, no Cloudflare Access)",
-    "modules/appearance/files/apps/web/src/lib/appearance.ts": "apps/web/src/lib/appearance.ts (rewritten: persist + <turbo-themes-picker>)"
+    "modules/appearance/files/apps/web/src/lib/appearance.ts": "apps/web/src/lib/appearance.ts (rewritten: persist + <turbo-themes-picker>)",
+    "modules/appearance/files/apps/web/src/components/AppearanceCard.tsx": "apps/web/src/components/AppearancePicker.tsx (rewritten on the headless controller, same mock-page idea)"
   },
-  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), appearance layouts and the Curator AppearanceCard (replaced by components/AppearancePicker.tsx, same mock-page idea, built on the headless controller; one fixed side-bar layout). Fonts are bundled with scripts/gen-fonts.mjs instead of the CDN."
+  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), discord-presence and cloudflare-access (no server, no Discord), appearance layouts and the Curator AppearanceCard (replaced by components/AppearancePicker.tsx; one fixed side-bar layout). Fonts are bundled with apps/web/scripts/gen-fonts.mjs instead of the CDN. The turbothemes dependency is pinned in apps/web/package.json to the same commit as engine.ref (pnpm then records an https tarball, no SSH address). Logo: branding/logo.json, emblem 'doc' in teal #1fc8a9 (change it if another app uses that hue); regenerate icons, never edit them."
 }

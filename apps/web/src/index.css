@@ -39,8 +39,6 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .guide th, .guide td { border: 1px solid hsl(var(--line)); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 .guide th { background: hsl(var(--raised)); font-weight: 600; }
 
-/* Multi-line boxes: a pill radius (Spotify, YouTube Music) would clip the text at the corners. Stopgap for the engine; delete when the engine does this. */
-textarea.input { border-radius: min(var(--in-r, var(--ctl-r, 8px)), 1.25rem); padding-inline: max(var(--in-px, 0.75rem), 1rem); padding-block: 0.6rem; }
 
 /* ---- the document editor (editor/*): pageless, on the theme's background. Sizes are the first TurboDocs' paragraph styles (pt -> px at 96 dpi). */
 .docs-editor { outline: none; min-height: 60vh; font-family: Calibri, Carlito, "Source Sans 3", sans-serif; font-size: 14.667px; line-height: 1.18; color: hsl(var(--fg)); caret-color: hsl(var(--accent)); }
