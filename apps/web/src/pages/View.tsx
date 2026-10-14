@@ -71,7 +71,7 @@ export function ViewPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4 p-6">
       <div className="flex items-center gap-3">
         <Link to="/" className="btn btn-ghost inline-flex items-center gap-1" aria-label="Back to Home"><ArrowLeft size={16} />Home</Link>
         <h1 className="min-w-0 flex-1 truncate text-xl font-bold" title={path}>{name}</h1>

@@ -4,7 +4,8 @@ import { Home, Settings } from 'lucide-react';
 import { WindowFrame } from './WindowFrame.tsx';
 import { cn } from '../lib/cn.ts';
 import { desktop, type OpenRequest } from '../lib/settings.ts';
-import { addOpened, viewUrl } from '../lib/opened.ts';
+import { addOpened, editUrl } from '../lib/opened.ts';
+import { confirmLeave } from '../lib/dirty.ts';
 
 const NAV = [{ to: '/', label: 'Home', icon: Home, end: true }, { to: '/settings', label: 'Settings', icon: Settings, end: false }];
 
@@ -15,7 +16,7 @@ export function Layout() {
   useEffect(() => {
     const d = desktop();
     if (!d) return;
-    const take = (r: OpenRequest) => { addOpened(r); navigate(r.module && r.installed ? viewUrl(r.path) : '/'); };
+    const take = (r: OpenRequest) => { addOpened(r); if (!confirmLeave()) return; navigate(r.module && r.installed ? editUrl(r.path) : '/'); };
     void d.takePending().then((rs) => rs.forEach(take));
     return d.onOpen(take);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -26,12 +27,12 @@ export function Layout() {
         <nav aria-label="Main" className="bt-side flex w-52 shrink-0 flex-col gap-1 p-3">
           <div className="px-2 pb-3 pt-1 text-lg font-bold">TurboDocs</div>
           {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cn('bt-nav flex items-center gap-2 px-3 py-2 text-sm', isActive && 'font-medium')} aria-current={undefined}>
+            <NavLink key={n.to} to={n.to} end={n.end} onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }} className={({ isActive }) => cn('bt-nav flex items-center gap-2 px-3 py-2 text-sm', isActive && 'font-medium')} aria-current={undefined}>
               {({ isActive }) => <span className="flex items-center gap-2" aria-current={isActive ? 'page' : undefined}><n.icon size={16} />{n.label}</span>}
             </NavLink>
           ))}
         </nav>
-        <main className="bt-page min-w-0 flex-1 overflow-y-auto p-6"><Outlet /></main>
+        <main className="bt-page min-w-0 flex-1 overflow-y-auto"><Outlet /></main>
       </div>
     </div>
   );

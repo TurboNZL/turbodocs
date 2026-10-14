@@ -6,5 +6,5 @@
     "modules/window-frame/files/apps/electron/src/main.ts": "apps/electron/src/main.ts (rewritten: no library server, no Discord, no Cloudflare Access)",
     "modules/appearance/files/apps/web/src/lib/appearance.ts": "apps/web/src/lib/appearance.ts (rewritten: persist + <turbo-themes-picker>)"
   },
-  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), appearance layouts / AppearanceCard (the stock <turbo-themes-picker> is used, one fixed side-bar layout). Fonts are bundled with scripts/gen-fonts.mjs instead of the CDN."
+  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), appearance layouts and the Curator AppearanceCard (replaced by components/AppearancePicker.tsx, same mock-page idea, built on the headless controller; one fixed side-bar layout). Fonts are bundled with scripts/gen-fonts.mjs instead of the CDN."
 }

@@ -2,7 +2,7 @@
 
 Documents, spreadsheets and presentations as small apps (modules) that install into one themed desktop shell.
 
-> **Status:** the shell works (window, themes, updates, Settings, module registry, offline fonts) and Docs is a read-only viewer for `.docx`, Markdown and text. Sheets and Slides are not built; nothing can be edited or saved yet. The earlier Python/Qt word processor lives on the `legacy/python` branch.
+> **Status:** the shell works (window, themes, updates, Settings, module registry, offline fonts) and **Docs edits and saves `.docx`, `.md` and `.txt`** (see `docs/guides/APP_MODULES.md` for what a Word save keeps). Sheets and Slides are not built. Layout and intent follow the original Python app: `docs/development/LEGACY_REFERENCE.md`.
 
 ## Run it
 
