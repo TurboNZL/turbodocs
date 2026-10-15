@@ -4,3 +4,5 @@ release/
 *.log
 .DS_Store
 .vite/
+apps/electron/build/deb-extra/
+apps/electron/build/icons/*.png.tmp

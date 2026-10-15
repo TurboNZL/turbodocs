@@ -14,9 +14,9 @@
     "start": "node scripts/build.mjs && electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "dist:publish": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder --publish always",
-    "dist": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder",
-    "dist:dir": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && electron-builder --dir"
+    "dist:publish": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && node scripts/prepare-icons.mjs && electron-builder --publish always",
+    "dist": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && node scripts/prepare-icons.mjs && electron-builder",
+    "dist:dir": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && node scripts/prepare-icons.mjs && electron-builder --dir"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
@@ -32,23 +32,99 @@
   "build": {
     "appId": "app.turbodocs.desktop",
     "productName": "TurboDocs",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["dist/**", "package.json"],
-    "extraResources": [{ "from": "../web/dist", "to": "web" }],
-    "publish": [{ "provider": "github", "owner": "TurboNZL", "repo": "turbodocs", "releaseType": "release" }],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "TurboNZL",
+        "repo": "turbodocs",
+        "releaseType": "release"
+      }
+    ],
     "artifactName": "turbodocs-${version}-${os}-${arch}.${ext}",
     "linux": {
-      "target": ["AppImage", "deb"],
-      "category": "Office",
-      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office;WordProcessor",
+      "icon": "build/icons",
       "executableName": "turbodocs",
       "maintainer": "TurboNZL <noreply@turbodocs.app>",
       "synopsis": "Documents, spreadsheets and presentations in one themed app",
-      "desktop": { "entry": { "StartupWMClass": "turbodocs" } }
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "turbodocs"
+        }
+      }
     },
-    "deb": { "packageName": "turbodocs", "artifactName": "turbodocs-${version}-linux-${arch}.${ext}" },
-    "win": { "target": ["nsis"], "icon": "build/icon.png" },
-    "mac": { "target": ["dmg"], "category": "public.app-category.productivity", "icon": "build/icon.png" },
-    "nsis": { "artifactName": "turbodocs-${version}-windows-${arch}-setup.${ext}", "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "deb": {
+      "packageName": "turbodocs",
+      "artifactName": "turbodocs-${version}-linux-${arch}.${ext}",
+      "fpm": [
+        "build/deb-extra/usr/share/icons/hicolor/scalable/apps/turbodocs.svg=/usr/share/icons/hicolor/scalable/apps/turbodocs.svg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "artifactName": "turbodocs-${version}-windows-${arch}-setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "fileAssociations": [
+      {
+        "ext": "docx",
+        "name": "Word document",
+        "description": "Word document",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "md",
+          "markdown"
+        ],
+        "name": "Markdown document",
+        "description": "Markdown document",
+        "mimeType": "text/markdown",
+        "role": "Editor"
+      },
+      {
+        "ext": "txt",
+        "name": "Text document",
+        "description": "Text document",
+        "mimeType": "text/plain",
+        "role": "Editor"
+      }
+    ]
   }
 }

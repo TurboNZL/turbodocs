@@ -1,4 +1,5 @@
 import { extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * TurboDocs is a shell plus app modules (Docs, Sheets, Slides). A module is installed or removed from Settings > Apps, and opens the file
@@ -27,7 +28,17 @@ export const isInstalled = (m: AppModule, saved: Record<string, boolean>) => m.a
 /** The module that opens this file, whether or not it is installed. */
 export const moduleFor = (path: string): AppModule | undefined => MODULES.find((m) => m.extensions.includes(extname(path).toLowerCase()));
 
+/**
+ * A launcher argument as a path. The desktop file says `%U`, so a file manager may hand over `file:///home/a/My%20doc.docx` instead of a
+ * plain path; both mean the same file. Anything else (flags, other URLs) is not a file.
+ */
+export function argToPath(arg: string): string | null {
+  if (arg.startsWith('-')) return null;
+  if (/^file:\/\//i.test(arg)) { try { return fileURLToPath(arg); } catch { return null; } }
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(arg) ? null : arg;
+}
+
 /** Files named on a command line (Linux/Windows "Open with"), ignoring flags and the program itself. */
 export function filesFromArgv(argv: string[], packaged: boolean): string[] {
-  return argv.slice(packaged ? 1 : 2).filter((a) => !a.startsWith('-') && !!moduleFor(a));
+  return argv.slice(packaged ? 1 : 2).map(argToPath).filter((p): p is string => !!p && !!moduleFor(p));
 }

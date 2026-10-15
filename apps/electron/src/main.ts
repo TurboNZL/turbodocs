@@ -97,7 +97,8 @@ function openWindow() {
   win = new BrowserWindow({
     frame: !custom, autoHideMenuBar: true,
     width: 1280, height: 840, minWidth: 420, minHeight: 520, backgroundColor: '#0b0b10', show: false, title: 'TurboDocs',
-    icon: join(here, '../build/icon.png'),
+    // packaged: the file is shipped as a resource (it is not inside app.asar); in development it is in build/
+    icon: app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(here, '../build/icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
   });
   win.removeMenu();
