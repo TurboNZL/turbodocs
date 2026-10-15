@@ -1,0 +1,16 @@
+{
+  "name": "TurboDocs",
+  "emblem": "doc",
+  "emblemColor": "#1fc8a9",
+  "out": {
+    "svg": "apps/web/public/icon.svg",
+    "mono": "apps/web/public/icon-mono.svg",
+    "png": [
+      ["apps/web/public/icon-512.png", 512],
+      ["apps/web/public/icon-192.png", 192],
+      ["apps/web/public/favicon-32.png", 32],
+      ["apps/electron/build/icon.png", 512],
+      ["apps/electron/build/icon-256.png", 256]
+    ]
+  }
+}
