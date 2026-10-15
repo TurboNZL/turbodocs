@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('turbodocsDesktop', {
   recent: () => ipcRenderer.invoke('turbodocs:recent') as Promise<unknown>,
   openRecent: (path: string) => ipcRenderer.invoke('turbodocs:recent-open', path) as Promise<unknown>,
   clearRecent: () => ipcRenderer.invoke('turbodocs:recent-clear') as Promise<void>,
+  defaultApps: () => ipcRenderer.invoke('turbodocs:default-apps') as Promise<unknown>,
+  setDefaultApps: (mimes: string[]) => ipcRenderer.invoke('turbodocs:default-apps-set', mimes) as Promise<unknown>,
   takePending: () => ipcRenderer.invoke('turbodocs:take-pending') as Promise<unknown>,
   onOpen: (cb: (r: unknown) => void) => { const h = (_e: unknown, r: unknown) => cb(r); ipcRenderer.on('turbodocs:open', h); return () => { ipcRenderer.removeListener('turbodocs:open', h); }; },
   updates: {

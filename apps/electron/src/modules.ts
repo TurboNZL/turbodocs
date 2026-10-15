@@ -23,6 +23,20 @@ export const MODULES: AppModule[] = [
   { id: 'slides', title: 'Slides', description: 'PowerPoint presentations.', extensions: ['.pptx'], available: false, defaultInstalled: false },
 ];
 
+/** The MIME type of each file extension a module opens: what a desktop environment keys "default application" on. */
+export const MIME_TYPES: Record<string, string> = {
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.md': 'text/markdown', '.markdown': 'text/markdown', '.txt': 'text/plain',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.csv': 'text/csv',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+/** One row per distinct MIME type of the given modules' extensions (.md and .markdown are one type). */
+export function mimeRows(mods: AppModule[]): { ext: string; mime: string; module: string }[] {
+  const seen = new Set<string>();
+  const out: { ext: string; mime: string; module: string }[] = [];
+  for (const m of mods) for (const ext of m.extensions) { const mime = MIME_TYPES[ext]; if (mime && !seen.has(mime)) { seen.add(mime); out.push({ ext, mime, module: m.id }); } }
+  return out;
+}
+
 export const isInstalled = (m: AppModule, saved: Record<string, boolean>) => m.available && (saved[m.id] ?? m.defaultInstalled);
 
 /** The module that opens this file, whether or not it is installed. */

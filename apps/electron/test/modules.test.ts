@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { argToPath, filesFromArgv, isInstalled, MODULES, moduleFor } from '../src/modules.ts';
+import { argToPath, filesFromArgv, isInstalled, MIME_TYPES, mimeRows, MODULES, moduleFor } from '../src/modules.ts';
+import { parseDefault } from '../src/defaultApps.ts';
 
 describe('which module opens a file', () => {
   it('goes by the extension, case-insensitively', () => {
@@ -49,5 +50,17 @@ describe('launcher arguments (the desktop file passes %U)', () => {
   });
   it('filesFromArgv accepts a mix of both forms', () => {
     expect(filesFromArgv(['/opt/TurboDocs/turbodocs', 'file:///tmp/a%20b.docx', '/tmp/c.txt', 'https://x/y.docx', '--flag'], true)).toEqual(['/tmp/a b.docx', '/tmp/c.txt']);
+  });
+});
+
+describe('default applications', () => {
+  it('every extension a module opens has a MIME type, and .md and .markdown share one row', () => {
+    for (const m of MODULES) for (const e of m.extensions) expect(MIME_TYPES[e], e).toBeTruthy();
+    const docs = mimeRows(MODULES.filter((m) => m.id === 'docs'));
+    expect(docs.map((r) => r.mime)).toEqual(['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/markdown', 'text/plain']);
+  });
+  it('reads the desktop file name from xdg-mime output', () => {
+    expect(parseDefault('turbodocs.desktop\n')).toBe('turbodocs.desktop');
+    expect(parseDefault('')).toBe('');
   });
 });

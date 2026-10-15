@@ -4,7 +4,8 @@ import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } f
 import { fileURLToPath } from 'node:url';
 import { findWebDir, loadDesktopConfig, loadRecent, loadUpdateToken, saveDesktopConfig, saveRecent, saveUpdateToken } from './desktopConfig.ts';
 import { startStaticServer } from './staticServer.ts';
-import { filesFromArgv, isInstalled, MODULES, moduleFor } from './modules.ts';
+import { filesFromArgv, isInstalled, MIME_TYPES, mimeRows, MODULES, moduleFor } from './modules.ts';
+import { queryDefaults, setDefaults } from './defaultApps.ts';
 import { Updates } from './updater.ts';
 import { existingFile, pushRecent, snippetOf, type Recent } from './recent.ts';
 import { describeGraphics, type Graphics } from './graphics.ts';
@@ -212,6 +213,16 @@ ipcMain.handle('turbodocs:recent-open', (_e, path: unknown) => {
   return openRequest(path);
 });
 ipcMain.handle('turbodocs:recent-clear', () => saveRecent(userData(), []));
+/** Default applications (Linux: xdg-mime). Only the types of installed modules are offered; the desktop file is the one the installer made. */
+const DESKTOP_ID = 'turbodocs.desktop';
+const installedRows = () => { const saved = loadDesktopConfig(userData()).modules; return mimeRows(MODULES.filter((m) => isInstalled(m, saved))); };
+ipcMain.handle('turbodocs:default-apps', () => queryDefaults(installedRows(), DESKTOP_ID));
+ipcMain.handle('turbodocs:default-apps-set', async (_e, mimes: unknown) => {
+  const allowedMimes = new Set(installedRows().map((r) => r.mime));
+  const wanted = Array.isArray(mimes) ? mimes.filter((m): m is string => typeof m === 'string' && allowedMimes.has(m)) : [];
+  if (process.platform === 'linux' && wanted.length) await setDefaults(wanted, DESKTOP_ID);
+  return queryDefaults(installedRows(), DESKTOP_ID);
+});
 ipcMain.handle('turbodocs:graphics', () => graphics());
 ipcMain.handle('turbodocs:gpu-get', () => { const c = loadDesktopConfig(userData()); return { mode: c.gpuMode, auto: c.gpuAuto, running: gpuStart.id, modes: GPU_MODES.map(({ id, label, hint }) => ({ id, label, hint })) }; });
 ipcMain.handle('turbodocs:gpu-report', async () => {
