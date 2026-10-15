@@ -2,10 +2,11 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { findWebDir, loadDesktopConfig, loadUpdateToken, saveDesktopConfig, saveUpdateToken } from './desktopConfig.ts';
+import { findWebDir, loadDesktopConfig, loadRecent, loadUpdateToken, saveDesktopConfig, saveRecent, saveUpdateToken } from './desktopConfig.ts';
 import { startStaticServer } from './staticServer.ts';
 import { filesFromArgv, isInstalled, MODULES, moduleFor } from './modules.ts';
 import { Updates } from './updater.ts';
+import { existingFile, pushRecent, snippetOf, type Recent } from './recent.ts';
 import { describeGraphics, type Graphics } from './graphics.ts';
 import { activeMode, GPU_MODES, nextAutoStep } from './gpuModes.ts';
 
@@ -35,9 +36,10 @@ const pending: string[] = [];
  */
 const allowed = new Set<string>();
 const MAX_FILE = 200 * 1024 * 1024;
+const rememberRecent = (path: string) => { try { saveRecent(userData(), pushRecent(loadRecent(userData()), resolve(path), Date.now())); } catch { /* the list is a convenience */ } };
 const openRequest = (path: string) => {
   const m = moduleFor(path);
-  if (m) allowed.add(resolve(path));
+  if (m) { allowed.add(resolve(path)); rememberRecent(path); }
   const desk = loadDesktopConfig(userData());
   return { path, module: m?.id ?? null, installed: m ? isInstalled(m, desk.modules) : false };
 };
@@ -176,6 +178,7 @@ ipcMain.handle('turbodocs:write-file', async (_e, path: unknown, bytes: unknown)
   if (!data) throw new Error('Nothing to save.');
   if (data.length > MAX_FILE) throw new Error('The document is too large to save.');
   await backupBeforeOverwrite(path);
+  rememberRecent(path);
   const tmp = `${path}.turbodocs-tmp`;
   try { await writeFile(tmp, data); await rename(tmp, path); } catch (e) { await unlink(tmp).catch(() => undefined); throw e; }
 });
@@ -192,6 +195,23 @@ ipcMain.handle('turbodocs:save-dialog', async (_e, suggested: unknown) => {
 /** The page tells us when the document has unsaved changes; closing the window then asks first. */
 let dirty = false;
 ipcMain.on('turbodocs:set-dirty', (_e, on: unknown) => { dirty = on === true; });
+/** The dashboard's recent documents. Opening one goes through openRequest, so it enters the allow-list again after a restart. */
+ipcMain.handle('turbodocs:recent', async () => {
+  const kept: Recent[] = [];
+  const cards = [];
+  for (const r of loadRecent(userData())) {
+    if (!(await existingFile(r.path))) continue;
+    kept.push(r);
+    cards.push({ path: r.path, at: r.at, mtime: (await stat(r.path)).mtimeMs, snippet: await snippetOf(r.path) });
+  }
+  if (kept.length !== loadRecent(userData()).length) saveRecent(userData(), kept);
+  return cards;
+});
+ipcMain.handle('turbodocs:recent-open', (_e, path: unknown) => {
+  if (typeof path !== 'string' || !loadRecent(userData()).some((r) => r.path === path)) throw new Error('That file is not in the recent list.');
+  return openRequest(path);
+});
+ipcMain.handle('turbodocs:recent-clear', () => saveRecent(userData(), []));
 ipcMain.handle('turbodocs:graphics', () => graphics());
 ipcMain.handle('turbodocs:gpu-get', () => { const c = loadDesktopConfig(userData()); return { mode: c.gpuMode, auto: c.gpuAuto, running: gpuStart.id, modes: GPU_MODES.map(({ id, label, hint }) => ({ id, label, hint })) }; });
 ipcMain.handle('turbodocs:gpu-report', async () => {

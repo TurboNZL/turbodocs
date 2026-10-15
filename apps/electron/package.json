@@ -19,7 +19,8 @@
     "dist:dir": "pnpm --filter @turbodocs/web build && node scripts/build.mjs && node scripts/prepare-icons.mjs && electron-builder --dir"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "jszip": "^3.10.2"
   },
   "devDependencies": {
     "@types/node": "^22.5.5",

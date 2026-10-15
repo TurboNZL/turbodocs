@@ -68,3 +68,5 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .tb-bar { border-bottom: 1px solid hsl(var(--line)); border-top: 1px solid hsl(var(--line)); }
 .tb-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 1.6rem; height: 1.85rem; padding: 0 0.2rem; }
 .tb-btn.tb-on, .tb-btn[aria-pressed="true"] { background: hsl(var(--accent) / 0.22); color: hsl(var(--accent)); }
+.docs-editor .find-hit { background: hsl(var(--accent) / 0.30); border-radius: 2px; }
+.docs-editor .find-hit.find-current { background: hsl(var(--accent) / 0.60); outline: 2px solid hsl(var(--accent)); }

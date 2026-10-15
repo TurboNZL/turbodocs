@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { FilePlus, FileText, FolderOpen, Presentation, Table2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { desktop, type ModuleInfo, type OpenRequest } from '../lib/settings.ts';
+import { desktop, type ModuleInfo, type OpenRequest, type RecentDoc } from '../lib/settings.ts';
+import { shortFolder, timeAgo } from '../lib/timeAgo.ts';
 import { Section } from '../components/Section.tsx';
 import { addOpened, editUrl, useOpened } from '../lib/opened.ts';
 
@@ -11,9 +12,11 @@ const ICONS: Record<string, typeof FileText> = { docs: FileText, sheets: Table2,
 export function HomePage() {
   const d = desktop();
   const [mods, setMods] = useState<ModuleInfo[]>([]);
-  const opened = useOpened();
+  const opened = useOpened().filter((o) => !(o.module && o.installed)); // files that open straight in their module need no notice here
+  const [recent, setRecent] = useState<RecentDoc[]>([]);
   const navigate = useNavigate();
-  useEffect(() => { void d?.modules().then(setMods); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void d?.modules().then(setMods); void d?.recent().then(setRecent); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const openRecent = (path: string) => void d?.openRecent(path).then((r) => { addOpened(r); navigate(editUrl(r.path)); }).catch(() => void d?.recent().then(setRecent));
   const open = () => void d?.openDialog().then((rs) => { rs.forEach(addOpened); const first = rs.find((r: OpenRequest) => r.module && r.installed); if (first) navigate(editUrl(first.path)); });
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6">
@@ -24,8 +27,29 @@ export function HomePage() {
         <button className="btn inline-flex items-center gap-2" disabled={!d} onClick={open}><FolderOpen size={16} />Open a file</button>
         {!d && <span className="text-sm text-muted">Opening and saving files works in the desktop app.</span>}
       </div>
+      {d && (
+        <section aria-label="Recent documents" className="space-y-2">
+          <div className="flex items-center gap-3">
+            <h2 className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted">Recent documents</h2>
+            {recent.length > 0 && <button type="button" className="btn btn-ghost text-sm" onClick={() => void d.clearRecent().then(() => setRecent([]))}>Clear list</button>}
+          </div>
+          {recent.length === 0
+            ? <p className="text-sm text-muted">Documents you open or save show up here. Tip: press Ctrl+O to open one.</p>
+            : <ul className="grid gap-3 sm:grid-cols-2">
+                {recent.map((r) => (
+                  <li key={r.path}>
+                    <button type="button" className="card bt-tile block w-full p-3 text-left" onClick={() => openRecent(r.path)} title={r.path}>
+                      <span className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate font-semibold">{(r.path.split(/[\\/]/).pop() ?? r.path).replace(/\.[^.]+$/, '')}</span><span className="shrink-0 text-xs text-muted">{timeAgo(r.at)}</span></span>
+                      <span className="block truncate text-xs text-muted">{shortFolder(r.path)}</span>
+                      {r.snippet && <span className="mt-1 line-clamp-3 block text-xs text-muted">{r.snippet}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>}
+        </section>
+      )}
       {opened.length > 0 && (
-        <Section title="Opened this session">
+        <Section title="Needs a module">
           <ul className="space-y-2 text-sm">
             {opened.map((o, i) => (
               <li key={`${o.path}-${i}`} className="flex flex-wrap items-baseline gap-2">
