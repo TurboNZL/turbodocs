@@ -6,7 +6,7 @@ import {
   List, ListOrdered, MoveHorizontal, Redo2, Table2, Underline, Undo2,
 } from 'lucide-react';
 import { Popover } from './Popover.tsx';
-import { COLOURS, DEFAULT_FONT, FONT_CHOICES, SIZES } from './fonts.ts';
+import { COLOURS, FONT_CHOICES, SIZES } from './fonts.ts';
 import { cn } from '../lib/cn.ts';
 
 /**
@@ -45,14 +45,14 @@ function SplitColour({ label, icon, last, onApply, onPick }: { label: string; ic
   );
 }
 
-export function Toolbar({ editor, width, setWidth }: { editor: Editor; width: number; setWidth: (w: number) => void }) {
+export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; width: number; setWidth: (w: number) => void; base: { font: string; size: number } }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => {
       const ts = e.getAttributes('textStyle');
       const style = e.isActive('heading', { level: 1 }) ? 'h1' : e.isActive('heading', { level: 2 }) ? 'h2' : e.isActive('heading', { level: 3 }) ? 'h3' : e.getAttributes('paragraph').pstyle === 'title' ? 'title' : e.getAttributes('paragraph').pstyle === 'subtitle' ? 'subtitle' : 'normal';
       return {
-        canUndo: e.can().undo(), canRedo: e.can().redo(), style, font: (ts.fontFamily as string | undefined) ?? DEFAULT_FONT, size: String((ts.fontSize as string | undefined)?.replace('pt', '') ?? '11'),
+        canUndo: e.can().undo(), canRedo: e.can().redo(), style, font: (ts.fontFamily as string | undefined) ?? base.font, size: String((ts.fontSize as string | undefined)?.replace('pt', '') ?? base.size),
         bold: e.isActive('bold'), italic: e.isActive('italic'), underline: e.isActive('underline'), strike: e.isActive('strike'), link: e.isActive('link'), linkHref: (e.getAttributes('link').href as string | undefined) ?? '',
         left: e.isActive({ textAlign: 'left' }), center: e.isActive({ textAlign: 'center' }), right: e.isActive({ textAlign: 'right' }), justify: e.isActive({ textAlign: 'justify' }),
         bullets: e.isActive('bulletList'), numbers: e.isActive('orderedList'), inTable: e.isActive('table'),

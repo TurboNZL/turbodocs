@@ -68,16 +68,42 @@ describe('importing a file saved by LibreOffice', () => {
   });
 });
 
+describe('importing a file exported by Google Docs', () => {
+  it('reads the list and the document\'s own defaults (Arial 11 pt, 1.15 lines, no space after)', async () => {
+    const { doc, warnings, styles } = await importDocx(fixture('google-docs-cars.docx'));
+    expect(() => valid(doc)).not.toThrow();
+    expect(warnings).toEqual([]);
+    expect(find(doc, 'paragraph').map(text).filter(Boolean)).toEqual(['Lambo Murcielago', 'Ferrari FXX K Evo', 'Nissan GTR R-36', 'Tesla Model S Plaid', 'AM DB11', 'Ford Focus', 'Toyota Mk 5 Supra', 'Mercedes AMG One']);
+    expect(styles.page).toMatchObject({ width: 12240, height: 15840, landscape: false }); // US Letter, kept
+    expect(styles.font).toBe('Arial');
+    expect(styles.size).toBe(11);
+    expect(styles.line).toBe(1.15);
+    expect(styles.after).toBe(0);
+    expect(styles.title.size).toBe(26); // the file says 26 pt, not the 28 pt default
+    expect(styles.h1.size).toBe(20);
+    expect(styles.h1.bold).toBe(false); // Google's headings are not bold
+  });
+  it('a file that gives no styles gets the first TurboDocs\' values', async () => {
+    const { styles } = await importDocx(fixture('python-docx-report.docx'));
+    expect(styles.h1.size).toBeGreaterThan(0);
+    expect(styles.title.size).toBeGreaterThan(0);
+  });
+});
+
 describe('saving', () => {
-  for (const name of ['python-docx-report.docx', 'libreoffice-roundtrip.docx']) {
+  for (const name of ['python-docx-report.docx', 'libreoffice-roundtrip.docx', 'google-docs-cars.docx']) {
     it(`${name}: what is read back after a save equals what was saved`, async () => {
-      const first = (await importDocx(fixture(name))).doc;
-      const { bytes, warnings } = await exportDocx(first);
+      const imp = await importDocx(fixture(name));
+      const first = imp.doc;
+      const { bytes, warnings } = await exportDocx(first, imp.styles);
       expect(warnings).toEqual([]);
       expect(bytes.length).toBeGreaterThan(1000);
-      const again = (await importDocx(bytes)).doc;
+      const back = await importDocx(bytes);
+      const again = back.doc;
       expect(() => valid(again)).not.toThrow();
       expect(shape(merge(again))).toEqual(shape(merge(first)));
+      // the document's own text styles survive a save: body font and size, spacing, and the sizes of the named styles
+      expect(back.styles).toEqual(imp.styles);
     });
   }
   it('says what it could not keep', async () => {
@@ -90,8 +116,9 @@ describe('saving', () => {
 describe.runIf(process.env.EXPORT_DIR)('external check', () => {
   it('writes the exports', async () => {
     const { writeFileSync } = await import('node:fs');
-    for (const name of ['python-docx-report.docx', 'libreoffice-roundtrip.docx']) {
-      const { bytes } = await exportDocx((await importDocx(fixture(name))).doc);
+    for (const name of ['python-docx-report.docx', 'libreoffice-roundtrip.docx', 'google-docs-cars.docx']) {
+      const imp = await importDocx(fixture(name));
+      const { bytes } = await exportDocx(imp.doc, imp.styles);
       writeFileSync(join(process.env.EXPORT_DIR!, `saved-${name}`), bytes);
     }
   });

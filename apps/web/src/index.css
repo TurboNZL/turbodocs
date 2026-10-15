@@ -41,13 +41,14 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 
 
 /* ---- the document editor (editor/*): pageless, on the theme's background. Sizes are the first TurboDocs' paragraph styles (pt -> px at 96 dpi). */
-.docs-editor { outline: none; min-height: 60vh; font-family: Calibri, Carlito, "Source Sans 3", sans-serif; font-size: 14.667px; line-height: 1.18; color: hsl(var(--fg)); caret-color: hsl(var(--accent)); }
-.docs-editor p { margin: 0 0 6px; }
-.docs-editor h1 { font-size: 29.333px; font-weight: 700; margin: 18px 0 8px; line-height: 1.18; }
-.docs-editor h2 { font-size: 22.667px; font-weight: 700; margin: 14px 0 8px; line-height: 1.18; }
-.docs-editor h3 { font-size: 18.667px; font-weight: 700; margin: 10px 0 8px; line-height: 1.18; }
-.docs-editor p.p-title { font-size: 37.333px; font-weight: 700; margin: 0 0 8px; }
-.docs-editor p.p-subtitle { font-size: 20px; font-style: italic; color: #808080; margin: 0 0 8px; }
+.docs-editor { outline: none; min-height: 60vh; font-family: var(--ds-font, Calibri, Carlito, "Source Sans 3", sans-serif); font-size: var(--ds-size, 14.667px); line-height: var(--ds-line, 1.18); color: hsl(var(--fg)); caret-color: hsl(var(--accent)); }
+.docs-editor p { margin: 0 0 var(--ds-after, 6px); }
+.docs-editor h1, .docs-editor h2, .docs-editor h3, .docs-editor p.p-title, .docs-editor p.p-subtitle { line-height: inherit; }
+.docs-editor h1 { font-size: var(--ds-h1-size, 29.333px); font-weight: var(--ds-h1-weight, 700); font-style: var(--ds-h1-style, normal); color: var(--ds-h1-color, inherit); font-family: var(--ds-h1-font, inherit); margin: var(--ds-h1-before, 18px) 0 var(--ds-h1-after, 8px); }
+.docs-editor h2 { font-size: var(--ds-h2-size, 22.667px); font-weight: var(--ds-h2-weight, 700); font-style: var(--ds-h2-style, normal); color: var(--ds-h2-color, inherit); font-family: var(--ds-h2-font, inherit); margin: var(--ds-h2-before, 14px) 0 var(--ds-h2-after, 8px); }
+.docs-editor h3 { font-size: var(--ds-h3-size, 18.667px); font-weight: var(--ds-h3-weight, 700); font-style: var(--ds-h3-style, normal); color: var(--ds-h3-color, inherit); font-family: var(--ds-h3-font, inherit); margin: var(--ds-h3-before, 10px) 0 var(--ds-h3-after, 8px); }
+.docs-editor p.p-title { font-size: var(--ds-title-size, 37.333px); font-weight: var(--ds-title-weight, 700); font-style: var(--ds-title-style, normal); color: var(--ds-title-color, inherit); font-family: var(--ds-title-font, inherit); margin: var(--ds-title-before, 0px) 0 var(--ds-title-after, 8px); }
+.docs-editor p.p-subtitle { font-size: var(--ds-subtitle-size, 20px); font-weight: var(--ds-subtitle-weight, 400); font-style: var(--ds-subtitle-style, italic); color: var(--ds-subtitle-color, #808080); font-family: var(--ds-subtitle-font, inherit); margin: var(--ds-subtitle-before, 0px) 0 var(--ds-subtitle-after, 8px); }
 .docs-editor ul, .docs-editor ol { margin: 0 0 6px; padding-left: 1.6rem; }
 .docs-editor ul { list-style: disc; } .docs-editor ul ul { list-style: circle; } .docs-editor ul ul ul { list-style: square; }
 .docs-editor ol { list-style: decimal; } .docs-editor ol ol { list-style: lower-alpha; } .docs-editor ol ol ol { list-style: lower-roman; }

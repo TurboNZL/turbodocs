@@ -9,7 +9,21 @@ import { DOMParser } from '@xmldom/xmldom';
  * caller must tell the person before a save would drop it.
  */
 export type Json = { type: string; attrs?: Record<string, unknown>; content?: Json[]; text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] };
-export interface Imported { doc: Json; warnings: string[] }
+export interface Imported { doc: Json; warnings: string[]; styles: DocStyles }
+
+/** One paragraph style: sizes in pt, spacing in px (the first TurboDocs' units). */
+export interface StyleDef { size?: number; bold?: boolean; italic?: boolean; color?: string; font?: string; before?: number; after?: number }
+/** What a document says about its text: the body font, size, line spacing and the five named styles. */
+/** Paper: size and margins in twips (1/1440 inch), as in the file. Not shown in the pageless editor, but kept so a save does not change what prints. */
+export interface PageSetup { width: number; height: number; landscape: boolean; top: number; right: number; bottom: number; left: number }
+export interface DocStyles { page: PageSetup; font: string; size: number; line: number; after: number; title: StyleDef; subtitle: StyleDef; h1: StyleDef; h2: StyleDef; h3: StyleDef }
+/** The first TurboDocs' paragraph styles (docs/development/LEGACY_REFERENCE.md): used for new documents and wherever a file is silent. */
+export const FACTORY_STYLES: DocStyles = {
+  page: { width: 11906, height: 16838, landscape: false, top: 1440, right: 1440, bottom: 1440, left: 1440 }, // A4, 2.54 cm margins
+  font: 'Calibri', size: 11, line: 1.18, after: 6,
+  title: { size: 28, bold: true, before: 0, after: 8 }, subtitle: { size: 15, italic: true, color: '#808080', before: 0, after: 8 },
+  h1: { size: 22, bold: true, before: 18, after: 8 }, h2: { size: 17, bold: true, before: 14, after: 8 }, h3: { size: 14, bold: true, before: 10, after: 8 },
+};
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -32,7 +46,8 @@ const on = (e: El | undefined): boolean => { if (!e) return false; const v = wAt
 const descendants = (e: El, local: string): El[] => [...e.getElementsByTagNameNS('*', local)];
 
 interface RunProps { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; color?: string; highlight?: string; size?: string; font?: string }
-interface StyleInfo { id: string; name: string; basedOn?: string; numId?: string; ilvl?: number; rPr: RunProps }
+interface Spacing { before?: number; after?: number; line?: number }
+interface StyleInfo { id: string; name: string; basedOn?: string; numId?: string; ilvl?: number; rPr: RunProps; sp: Spacing; isDefault: boolean }
 
 function readRPr(rPr: El | undefined): RunProps {
   const p: RunProps = {};
@@ -54,6 +69,18 @@ function readRPr(rPr: El | undefined): RunProps {
   const font = wAttr(fonts, 'ascii') ?? wAttr(fonts, 'hAnsi');
   if (font) p.font = font;
   return p;
+}
+
+/** w:spacing -> px for before/after (twips / 15) and a multiple for an automatic line height */
+function readSpacing(pPr: El | undefined): Spacing {
+  const sp = kid(pPr, 'spacing');
+  const out: Spacing = {};
+  const num = (n: string) => { const v = wAttr(sp, n); return v === null || v === '' || Number.isNaN(Number(v)) ? undefined : Number(v); };
+  const before = num('before'), after = num('after'), line = num('line');
+  if (before !== undefined) out.before = Math.round((before / TWIP_PER_PX) * 10) / 10;
+  if (after !== undefined) out.after = Math.round((after / TWIP_PER_PX) * 10) / 10;
+  if (line !== undefined && line > 0 && (wAttr(sp, 'lineRule') ?? 'auto') === 'auto') out.line = Math.round((line / 240) * 100) / 100;
+  return out;
 }
 
 function marksOf(p: RunProps, link?: string): NonNullable<Json['marks']> {
@@ -91,7 +118,10 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
   // ---- styles
   const styles = new Map<string, StyleInfo>();
   const stylesXml = await text('word/styles.xml');
+  let defaultsRPr: RunProps = {}, defaultsSp: Spacing = {}, hasDefaults = false;
   if (stylesXml) {
+    const dd = descendants(parse(stylesXml).documentElement, 'docDefaults')[0];
+    if (dd) { hasDefaults = true; defaultsRPr = readRPr(kid(kid(dd, 'rPrDefault'), 'rPr')); defaultsSp = readSpacing(kid(kid(dd, 'pPrDefault'), 'pPr')); }
     for (const s of descendants(parse(stylesXml).documentElement, 'style')) {
       const id = wAttr(s, 'styleId');
       if (!id) continue;
@@ -99,7 +129,7 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
       styles.set(id, {
         id, name: wAttr(kid(s, 'name'), 'val') ?? id, basedOn: wAttr(kid(s, 'basedOn'), 'val') ?? undefined,
         numId: wAttr(kid(numPr, 'numId'), 'val') ?? undefined, ilvl: numPr && kid(numPr, 'ilvl') ? Number(wAttr(kid(numPr, 'ilvl'), 'val')) : undefined,
-        rPr: readRPr(kid(s, 'rPr')),
+        rPr: readRPr(kid(s, 'rPr')), sp: readSpacing(kid(s, 'pPr')), isDefault: wAttr(s, 'type') === 'paragraph' && wAttr(s, 'default') === '1',
       });
     }
   }
@@ -340,5 +370,47 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
 
   const content = blocks(body);
   if (content[content.length - 1].type === 'table') content.push({ type: 'paragraph' });
-  return { doc: { type: 'doc', content }, warnings: [...warnings] };
+  return { doc: { type: 'doc', content }, warnings: [...warnings], styles: resolveStyles() };
+
+  /** The file's own text styles (docDefaults, Normal, Title, Subtitle, Heading 1 to 3); what it does not say comes from FACTORY_STYLES. */
+  function resolveStyles(): DocStyles {
+    const num = (v: string | undefined) => (v ? parseFloat(v) : undefined);
+    const merged = (id: string | undefined) => {
+      let r: RunProps = { ...defaultsRPr }, sp: Spacing = { ...defaultsSp };
+      for (const st of chain(id).reverse()) { r = { ...r, ...st.rPr }; sp = { ...sp, ...st.sp }; }
+      return { r, sp };
+    };
+    const normal = [...styles.values()].find((x) => x.isDefault);
+    const base = merged(normal?.id);
+    const out: DocStyles = { ...FACTORY_STYLES };
+    const sect = kid(body, 'sectPr');
+    const sz = kid(sect, 'pgSize') ?? kid(sect, 'pgSz'), mar = kid(sect, 'pgMar');
+    const tw = (e: El | undefined, n: string, d: number) => { const v = Number(wAttr(e, n)); return Number.isFinite(v) && v > 0 ? v : d; };
+    if (sz) {
+      const land = wAttr(sz, 'orient') === 'landscape';
+      out.page = {
+        width: tw(sz, 'w', FACTORY_STYLES.page.width), height: tw(sz, 'h', FACTORY_STYLES.page.height), landscape: land,
+        top: tw(mar, 'top', 1440), right: tw(mar, 'right', 1440), bottom: tw(mar, 'bottom', 1440), left: tw(mar, 'left', 1440),
+      };
+    }
+    if (hasDefaults) {
+      out.font = base.r.font ?? FACTORY_STYLES.font;
+      out.size = num(base.r.size) ?? FACTORY_STYLES.size;
+      out.line = base.sp.line ?? 1; // a file that says nothing about line spacing means single spacing
+      out.after = base.sp.after ?? 0;
+    }
+    const named: [keyof Pick<DocStyles, 'title' | 'subtitle' | 'h1' | 'h2' | 'h3'>, (n: string) => boolean][] = [
+      ['title', (n) => n === 'title'], ['subtitle', (n) => n === 'subtitle'], ['h1', (n) => n === 'heading 1'], ['h2', (n) => n === 'heading 2'], ['h3', (n) => n === 'heading 3'],
+    ];
+    for (const [key, is] of named) {
+      const st = [...styles.values()].find((x) => is(x.name.toLowerCase().replace(/\s+/g, ' ')));
+      if (!st) continue;
+      const m = merged(st.id);
+      out[key] = {
+        size: num(m.r.size), bold: !!m.r.bold, italic: !!m.r.italic, color: m.r.color,
+        font: m.r.font && m.r.font !== out.font ? m.r.font : undefined, before: m.sp.before ?? 0, after: m.sp.after ?? 0,
+      };
+    }
+    return out;
+  }
 }

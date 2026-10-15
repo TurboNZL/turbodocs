@@ -2,11 +2,11 @@ import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, ImageRun, LevelFormat, Packer, Paragraph, ShadingType, Tab, Table, TableCell, TableRow,
   TextRun, UnderlineType, WidthType, type ParagraphChild,
 } from 'docx';
-import type { Json } from './docxImport.ts';
+import { FACTORY_STYLES, type DocStyles, type Json, type StyleDef } from './docxImport.ts';
 
 /**
  * The editor's document -> a new .docx. The file is written fresh (not patched into the original), with the paragraph styles of the first
- * TurboDocs: Title 28 pt, Subtitle 15 pt italic grey, Heading 1-3 at 22/17/14 pt, body 11 pt Calibri with 1.18 line spacing. Anything the
+ * TurboDocs, or the document's own, when it was imported: the styles come in as `styles` (FACTORY_STYLES for a new document: Title 28 pt, Subtitle 15 pt italic grey, Heading 1-3 at 22/17/14 pt, body 11 pt Calibri, 1.18 line spacing). Anything the
  * editor could not represent was already reported on import; what leaves here is exactly what the editor shows.
  */
 export interface Exported { bytes: Uint8Array; warnings: string[] }
@@ -31,7 +31,7 @@ function decodeImage(src: string): { type: 'png' | 'jpg' | 'gif' | 'bmp'; data: 
   return { type: t === 'jpeg' || t === 'jpg' ? 'jpg' : (t as 'png' | 'gif' | 'bmp'), data };
 }
 
-export async function exportDocx(doc: Json): Promise<Exported> {
+export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES): Promise<Exported> {
   const warnings = new Set<string>();
   const orderedRefs: string[] = [];
 
@@ -166,20 +166,23 @@ export async function exportDocx(doc: Json): Promise<Exported> {
       ...orderedRefs.map((reference) => ({ reference, levels: Array.from({ length: 9 }, (_, i) => ({ level: i, format: i % 3 === 0 ? LevelFormat.DECIMAL : i % 3 === 1 ? LevelFormat.LOWER_LETTER : LevelFormat.LOWER_ROMAN, text: `%${i + 1}.`, alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 720 * (i + 1), hanging: 360 } } } })) })),
     ],
   };
-  const head = (id: string, name: string, size: number, before: number, after: number, extra: Record<string, unknown> = {}) => ({
-    id, name, basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: pt(size), bold: true, ...extra }, paragraph: { spacing: { before: before * PX, after: after * PX } },
+  const head = (id: string, name: string, d: StyleDef) => ({
+    id, name, basedOn: 'Normal', next: 'Normal', quickFormat: true,
+    run: { ...(d.size ? { size: pt(d.size) } : {}), ...(d.bold ? { bold: true } : {}), ...(d.italic ? { italics: true } : {}), ...(hex(d.color) ? { color: hex(d.color) } : {}), ...(d.font ? { font: d.font } : {}) },
+    paragraph: { spacing: { before: Math.round((d.before ?? 0) * PX), after: Math.round((d.after ?? 0) * PX) } },
   });
   const document = new Document({
     creator: 'TurboDocs',
     styles: {
-      default: { document: { run: { font: 'Calibri', size: pt(11) }, paragraph: { spacing: { after: 6 * PX, line: Math.round(1.18 * 240), lineRule: 'auto' } } } },
-      paragraphStyles: [
-        head('Title', 'Title', 28, 0, 8), head('Subtitle', 'Subtitle', 15, 0, 8, { bold: false, italics: true, color: '808080' }),
-        head('Heading1', 'heading 1', 22, 18, 8), head('Heading2', 'heading 2', 17, 14, 8), head('Heading3', 'heading 3', 14, 10, 8),
-      ],
+      default: { document: { run: { font: styles.font, size: pt(styles.size) }, paragraph: { spacing: { after: Math.round(styles.after * PX), line: Math.round(styles.line * 240), lineRule: 'auto' } } } },
+      paragraphStyles: [head('Title', 'Title', styles.title), head('Subtitle', 'Subtitle', styles.subtitle), head('Heading1', 'heading 1', styles.h1), head('Heading2', 'heading 2', styles.h2), head('Heading3', 'heading 3', styles.h3)],
     },
     numbering,
-    sections: [{ children }],
+    sections: [{
+      properties: { page: { size: { width: styles.page.landscape ? styles.page.height : styles.page.width, height: styles.page.landscape ? styles.page.width : styles.page.height, orientation: styles.page.landscape ? 'landscape' : 'portrait' },
+        margin: { top: styles.page.top, right: styles.page.right, bottom: styles.page.bottom, left: styles.page.left } } },
+      children,
+    }],
   } as never);
   const blob = await Packer.toBlob(document);
   return { bytes: new Uint8Array(await blob.arrayBuffer()), warnings: [...warnings] };
