@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('turbodocsDesktop', {
   writeFile: (path: string, bytes: Uint8Array | string) => ipcRenderer.invoke('turbodocs:write-file', path, bytes) as Promise<void>,
   saveDialog: (suggested: string) => ipcRenderer.invoke('turbodocs:save-dialog', suggested) as Promise<string | null>,
   setDirty: (on: boolean) => ipcRenderer.send('turbodocs:set-dirty', on),
+  recent: () => ipcRenderer.invoke('turbodocs:recent') as Promise<unknown>,
+  openRecent: (path: string) => ipcRenderer.invoke('turbodocs:recent-open', path) as Promise<unknown>,
+  clearRecent: () => ipcRenderer.invoke('turbodocs:recent-clear') as Promise<void>,
+  defaultApps: () => ipcRenderer.invoke('turbodocs:default-apps') as Promise<unknown>,
+  setDefaultApps: (mimes: string[]) => ipcRenderer.invoke('turbodocs:default-apps-set', mimes) as Promise<unknown>,
   takePending: () => ipcRenderer.invoke('turbodocs:take-pending') as Promise<unknown>,
   onOpen: (cb: (r: unknown) => void) => { const h = (_e: unknown, r: unknown) => cb(r); ipcRenderer.on('turbodocs:open', h); return () => { ipcRenderer.removeListener('turbodocs:open', h); }; },
   updates: {

@@ -10,7 +10,7 @@ One themed desktop app for reading and writing the documents people actually rec
 
 - Shell: themed window (turbothemes), Settings (Appearance, Apps, Guides, This app), self-update, optional theme-drawn title bar. Done.
 - Module registry and file routing (Open, OS "Open with", command line). Done; modules themselves are not built.
-- Docs module: view and edit `.docx`, `.md`, `.txt`; save with a backup of the original; unsaved-changes guards. Done, with the gaps listed in `docs/development/LEGACY_REFERENCE.md` (menu bar, find/replace, document tabs, image resize/crop, crash backups, recent documents). Sheets and Slides: not started.
+- Docs module: view and edit `.docx`, `.md`, `.txt`; save with a backup of the original; unsaved-changes guards. Done, with the gaps listed in `docs/development/LEGACY_REFERENCE.md` (menu bar, document tabs, image resize/crop, crash backups, word count dialog, editing the document's styles). Sheets and Slides: not started.
 
 ## Reference: the original app
 The editor copies the intent and layout of the first TurboDocs (Python/Qt, branch `legacy/python`). Real screenshots of it, taken by running that branch, and a full write-up (menus, toolbar order, status bar, dashboard, paragraph style values, shortcuts, what is and is not ported yet) are in `docs/development/LEGACY_REFERENCE.md`. In short: a **pageless** canvas on the theme's own background (a ~760 px centred column, adjustable), one formatting toolbar (undo/redo, style, font, size, B/I/U, split text-colour and highlight buttons, align, spacing, lists, indent, link/image/table/emoji, a Width button), a status bar with word count and a zoom slider, a floating tabs button, a dashboard of recent documents, and a promise that nothing is lost silently. Compare any editor change with those screenshots before calling it done.
@@ -30,7 +30,7 @@ Electron main process (window, local static server on 127.0.0.1:47815, IPC, modu
 
 1. Module delivery design (see CLAUDE.md, open questions). Done when written down and agreed.
 2. Docs: open, edit and save .docx/.md/.txt. Done for the basics; "done" for fidelity needs real Word-authored files (only python-docx and LibreOffice files were tried).
-3. Close the gaps to the original app (LEGACY_REFERENCE.md), most valuable first: Find and replace, menu bar, recent documents, crash backups.
+3. Close the gaps to the original app (LEGACY_REFERENCE.md), most valuable first: menu bar, crash backups, document tabs, image resize and crop.
 4. Sheets viewer (cached values), then Slides viewer; editing only after a viewer is trusted.
 
 ## Glossary

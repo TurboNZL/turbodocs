@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Color, FontFamily, FontSize, TextStyle } from '@tiptap/extension-text-style';
 import { fontStack, plainFont } from './fonts.ts';
+import { Search } from './search.ts';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
@@ -62,5 +63,5 @@ export const editorExtensions = [
   SizedImage.configure({ inline: true, allowBase64: true }),
   Table.configure({ resizable: true }),
   TableRow, TableHeader.extend(cellColour), TableCell.extend(cellColour),
-  ParagraphStyle,
+  ParagraphStyle, Search,
 ];

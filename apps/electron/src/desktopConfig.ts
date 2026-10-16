@@ -53,3 +53,16 @@ export const loadUpdateToken = (userData: string): string => {
   try { const t = (JSON.parse(readFileSync(join(userData, FILE), 'utf8')) as { updateToken?: unknown }).updateToken; return typeof t === 'string' ? t : ''; } catch { return ''; }
 };
 export const saveUpdateToken = (userData: string, token: string) => saveDesktopConfig(userData, { updateToken: token.trim() } as Partial<DesktopConfig>);
+
+/** The recent-documents list lives in its own file so a settings write can never lose it. */
+const RECENT_FILE = 'recent.json';
+export function loadRecent(userData: string): { path: string; at: number }[] {
+  try {
+    const v = JSON.parse(readFileSync(join(userData, RECENT_FILE), 'utf8')) as unknown;
+    return Array.isArray(v) ? v.filter((r): r is { path: string; at: number } => typeof r?.path === 'string' && typeof r?.at === 'number') : [];
+  } catch { return []; }
+}
+export function saveRecent(userData: string, list: { path: string; at: number }[]) {
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(join(userData, RECENT_FILE), JSON.stringify(list));
+}

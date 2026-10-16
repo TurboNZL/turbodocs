@@ -2,6 +2,10 @@
 export interface ModuleInfo { id: string; title: string; description: string; extensions: string[]; available: boolean; installed: boolean }
 /** A file somebody asked us to open: the module that handles its type, and whether that module is installed. */
 export interface OpenRequest { path: string; module: string | null; installed: boolean }
+/** Which file types TurboDocs is the default application for (Linux; elsewhere the system's own settings, `reason` says where) */
+export interface DefaultApps { supported: boolean; reason?: string; desktopId: string; rows: { ext: string; mime: string; module: string; isDefault: boolean }[] }
+/** One card of the dashboard's recent documents */
+export interface RecentDoc { path: string; at: number; mtime: number; snippet: string }
 export interface GpuInfo { mode: string; auto: { step: number; done: boolean }; running: string; modes: { id: string; label: string; hint: string }[] }
 
 export interface TurboDocsDesktop {
@@ -10,6 +14,12 @@ export interface TurboDocsDesktop {
   setModule(id: string, on: boolean): Promise<ModuleInfo[]>;
   openDialog(): Promise<OpenRequest[]>;
   takePending(): Promise<OpenRequest[]>;
+  defaultApps(): Promise<DefaultApps>;
+  setDefaultApps(mimes: string[]): Promise<DefaultApps>;
+  recent(): Promise<RecentDoc[]>;
+  /** opens a file from the recent list (it is allowed again for reading and saving) */
+  openRecent(path: string): Promise<OpenRequest>;
+  clearRecent(): Promise<void>;
   /** replaces a file that was opened or chosen with Save as (the old one is copied to the app's backups first); text is saved as UTF-8 */
   writeFile(path: string, bytes: Uint8Array | string): Promise<void>;
   /** the Save as dialog; null when cancelled */
