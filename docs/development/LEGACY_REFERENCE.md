@@ -1,6 +1,6 @@
 # Reference: the original TurboDocs (Python / Qt)
 
-The editor in the new app copies the **intent and layout** of the first TurboDocs, which lived on the branch `legacy/python`. **That branch was deleted on 2026-10-17, once everything below was ported.** Nothing was lost: its last commit, `e14febc`, is an ancestor of `main` (`git show e14febc:turbodocs/prefs.py`), and its uninstall script is `scripts/uninstall-legacy-python.sh`. These screenshots were taken by running that branch headless (`reference/legacy-python/capture.py`, PySide6 with `QT_QPA_PLATFORM=offscreen`, a generated 37-word `.docx`), so they are the real thing, not mock-ups. Check them before changing the editor's layout.
+The editor in the new app copies the **intent and layout** of the first TurboDocs, which lived on the branch `legacy/python`. **Everything below was ported on 2026-10-17, so the branch is obsolete and can be deleted** (`git push origin --delete legacy/python`). Nothing is lost by that: its last commit, `e14febc`, is an ancestor of `main` (`git show e14febc:turbodocs/prefs.py`), and its uninstall script is `scripts/uninstall-legacy-python.sh`. These screenshots were taken by running that branch headless (`reference/legacy-python/capture.py`, PySide6 with `QT_QPA_PLATFORM=offscreen`, a generated 37-word `.docx`), so they are the real thing, not mock-ups. Check them before changing the editor's layout.
 
 | | |
 |---|---|
