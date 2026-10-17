@@ -19,8 +19,8 @@ export interface AppModule {
 
 export const MODULES: AppModule[] = [
   { id: 'docs', title: 'Docs', description: 'Word documents, Markdown and text.', extensions: ['.docx', '.md', '.markdown', '.txt'], available: true, defaultInstalled: true },
-  { id: 'sheets', title: 'Sheets', description: 'Excel workbooks and CSV.', extensions: ['.xlsx', '.csv'], available: false, defaultInstalled: false },
-  { id: 'slides', title: 'Slides', description: 'PowerPoint presentations.', extensions: ['.pptx'], available: false, defaultInstalled: false },
+  { id: 'sheets', title: 'Sheets', description: 'Excel workbooks and CSV: values, formats, several sheets (formulas are kept, not calculated yet).', extensions: ['.xlsx', '.csv'], available: true, defaultInstalled: true },
+  { id: 'slides', title: 'Slides', description: 'PowerPoint presentations: text, shapes and pictures, speaker notes, a full-screen show.', extensions: ['.pptx'], available: true, defaultInstalled: true },
 ];
 
 /** The MIME type of each file extension a module opens: what a desktop environment keys "default application" on. */

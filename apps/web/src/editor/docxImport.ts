@@ -16,7 +16,7 @@ export interface StyleDef { size?: number; bold?: boolean; italic?: boolean; col
 /** What a document says about its text: the body font, size, line spacing and the five named styles. */
 /** Paper: size and margins in twips (1/1440 inch), as in the file. Not shown in the pageless editor, but kept so a save does not change what prints. */
 export interface PageSetup { width: number; height: number; landscape: boolean; top: number; right: number; bottom: number; left: number }
-export interface DocStyles { page: PageSetup; font: string; size: number; line: number; after: number; title: StyleDef; subtitle: StyleDef; h1: StyleDef; h2: StyleDef; h3: StyleDef }
+export interface DocStyles { pageColor?: string; page: PageSetup; font: string; size: number; line: number; after: number; title: StyleDef; subtitle: StyleDef; h1: StyleDef; h2: StyleDef; h3: StyleDef }
 /** The first TurboDocs' paragraph styles (docs/development/LEGACY_REFERENCE.md): used for new documents and wherever a file is silent. */
 export const FACTORY_STYLES: DocStyles = {
   page: { width: 11906, height: 16838, landscape: false, top: 1440, right: 1440, bottom: 1440, left: 1440 }, // A4, 2.54 cm margins
@@ -195,7 +195,6 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
   if (descendants(body, 'pict').length || descendants(body, 'object').length) warnings.add('Embedded objects and legacy drawings.');
   if (descendants(body, 'footnoteReference').length) warnings.add('Footnotes or endnotes.');
   if (descendants(body, 'anchor').some((a) => a.namespaceURI?.includes('wordprocessingDrawing'))) warnings.add('Floating pictures become part of the text flow.');
-  if (descendants(body, 'srcRect').some((r) => ['l', 't', 'r', 'b'].some((k) => Number(r.getAttribute(k)) > 0))) warnings.add('Picture cropping (pictures are shown uncropped).');
 
   // ---- body -> blocks
   const listCounter = new Map<string, number>();
@@ -254,7 +253,10 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
     const ext = descendants(d, 'extent')[0];
     const cx = Number(ext?.getAttribute('cx')), cy = Number(ext?.getAttribute('cy'));
     const alt = descendants(d, 'docPr')[0]?.getAttribute('descr') ?? null;
-    return { type: 'image', attrs: { src, alt, ...(cx > 0 ? { width: Math.round(cx / EMU_PER_PX) } : {}), ...(cy > 0 ? { height: Math.round(cy / EMU_PER_PX) } : {}) } };
+    const rect = descendants(d, 'srcRect')[0];
+    const part = (k: string) => Math.min(0.95, Math.max(0, (Number(rect?.getAttribute(k)) || 0) / 100000));
+    const crop = rect ? { l: part('l'), t: part('t'), r: part('r'), b: part('b') } : null;
+    return { type: 'image', attrs: { src, alt, ...(crop && (crop.l || crop.t || crop.r || crop.b) ? { crop } : {}), ...(cx > 0 ? { width: Math.round(cx / EMU_PER_PX) } : {}), ...(cy > 0 ? { height: Math.round(cy / EMU_PER_PX) } : {}) } };
   }
 
   interface ListItem { level: number; kind: 'bullet' | 'ordered'; numId: string; para: Json }
@@ -275,6 +277,8 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
     // the paragraph style's own run formatting (a "Quote" style in italics) carries to its runs
     const inherited: RunProps = chain(styleId).reverse().reduce<RunProps>((acc, s) => (kind.kind === 'normal' ? { ...acc, ...s.rPr } : acc), {});
     const content = runsOf(p, inherited);
+    const tabMark = descendants(p, 'bookmarkStart').map((b) => wAttr(b, 'name') ?? '').find((n) => /^tdtab_/.test(n));
+    if (tabMark) attrs.tab = tabMark;
     let node: Json;
     if (kind.kind === 'heading') node = { type: 'heading', attrs: { level: kind.level, ...attrs }, ...(content.length ? { content } : {}) };
     else node = { type: 'paragraph', attrs: { ...attrs, ...(kind.kind === 'title' || kind.kind === 'subtitle' ? { pstyle: kind.kind } : {}) }, ...(content.length ? { content } : {}) };
@@ -393,6 +397,9 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
         top: tw(mar, 'top', 1440), right: tw(mar, 'right', 1440), bottom: tw(mar, 'bottom', 1440), left: tw(mar, 'left', 1440),
       };
     }
+    const bg = xml.documentElement ? kid(xml.documentElement, 'background') : undefined;
+    const bgc = wAttr(bg, 'color');
+    if (bgc && /^[0-9a-f]{6}$/i.test(bgc) && bgc.toLowerCase() !== 'ffffff') out.pageColor = `#${bgc.toLowerCase()}`;
     if (hasDefaults) {
       out.font = base.r.font ?? FACTORY_STYLES.font;
       out.size = num(base.r.size) ?? FACTORY_STYLES.size;

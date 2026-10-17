@@ -40,10 +40,11 @@
     "docx-preview": "^0.4.1",
     "jszip": "^3.10.2",
     "lucide-react": "^1.56.0",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
-    "turbothemes": "git+https://github.com/TurboNZL/turboengine.git#7dbbe2eb0f35850b83e2c83edae89ca9d144077e&path:/themes"
+    "turbothemes": "git+https://github.com/TurboNZL/turboengine.git#4b739fb570f88ad6f4df3a876c8203338b871e8a&path:/themes"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

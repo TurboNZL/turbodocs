@@ -1,0 +1,58 @@
+/**
+ * The spreadsheet in memory. Cells are sparse (`"row,col"`, both from 0). Values are what the file holds; `f` is a formula's text, kept so that a save writes it
+ * back (TurboDocs does not calculate formulas yet: it shows the value the file last had).
+ */
+export interface CellFmt {
+  b?: boolean; i?: boolean; u?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean;
+}
+export type CellValue = string | number | boolean | null;
+export interface Cell { v: CellValue; f?: string; /** an error value such as #DIV/0! (kept as text in `v`) */ err?: boolean; s?: CellFmt }
+export interface Range { r1: number; c1: number; r2: number; c2: number }
+export interface Sheet {
+  name: string; cells: Record<string, Cell>;
+  /** column widths and row heights in px, only where they differ from the default */
+  colW: Record<number, number>; rowH: Record<number, number>; merges: Range[];
+}
+export interface Workbook { sheets: Sheet[]; active: number; /** csv only */ delimiter?: string }
+
+export const DEFAULT_COL_W = 96, DEFAULT_ROW_H = 24, MIN_ROWS = 100, MIN_COLS = 26;
+
+export const key = (r: number, c: number) => `${r},${c}`;
+export const unkey = (k: string): [number, number] => { const i = k.indexOf(','); return [Number(k.slice(0, i)), Number(k.slice(i + 1))]; };
+export function colName(c: number): string { let s = ''; for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; }
+export function colIndex(name: string): number { let n = 0; for (const ch of name.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; }
+export const addr = (r: number, c: number) => `${colName(c)}${r + 1}`;
+export function parseAddr(a: string): [number, number] | null { const m = /^\$?([A-Za-z]{1,3})\$?(\d+)$/.exec(a.trim()); return m ? [Number(m[2]) - 1, colIndex(m[1])] : null; }
+export function parseRange(a: string): Range | null {
+  const [x, y] = a.split(':'); const p = parseAddr(x), q = parseAddr(y ?? x);
+  return p && q ? { r1: Math.min(p[0], q[0]), c1: Math.min(p[1], q[1]), r2: Math.max(p[0], q[0]), c2: Math.max(p[1], q[1]) } : null;
+}
+export const rangeText = (g: Range) => (g.r1 === g.r2 && g.c1 === g.c2 ? addr(g.r1, g.c1) : `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`);
+export const norm = (a: { r: number; c: number }, b: { r: number; c: number }): Range => ({ r1: Math.min(a.r, b.r), c1: Math.min(a.c, b.c), r2: Math.max(a.r, b.r), c2: Math.max(a.c, b.c) });
+
+export const emptySheet = (name: string): Sheet => ({ name, cells: {}, colW: {}, rowH: {}, merges: [] });
+export const newWorkbook = (): Workbook => ({ sheets: [emptySheet('Sheet1')], active: 0 });
+
+/** the used area: rows and columns that hold anything (at least the default grid is drawn around it) */
+export function extent(s: Sheet): { rows: number; cols: number } {
+  let rows = 0, cols = 0;
+  for (const k of Object.keys(s.cells)) { const [r, c] = unkey(k); if (r + 1 > rows) rows = r + 1; if (c + 1 > cols) cols = c + 1; }
+  for (const m of s.merges) { rows = Math.max(rows, m.r2 + 1); cols = Math.max(cols, m.c2 + 1); }
+  return { rows, cols };
+}
+
+/** what typing into a cell means: nothing, a number, TRUE/FALSE, or text */
+export function parseInput(text: string, typed: boolean): CellValue {
+  const t = text.trim();
+  if (text === '') return null;
+  if (!typed) return text;
+  if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t) && !/^[-+]?0\d/.test(t) && t.replace(/\D/g, '').length <= 15) return Number(t);
+  if (/^[-+]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return Number(t.replace(/,/g, ''));
+  const pct = /^([-+]?\d+(\.\d+)?)%$/.exec(t);
+  if (pct) return Number(pct[1]) / 100;
+  if (/^true$/i.test(t)) return true;
+  if (/^false$/i.test(t)) return false;
+  return text;
+}
+export const isNumeric = (v: CellValue): boolean => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(v.trim()));
+export const numberOf = (v: CellValue): number | null => (typeof v === 'number' ? v : isNumeric(v) ? Number((v as string).trim()) : null);

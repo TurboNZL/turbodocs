@@ -3,10 +3,11 @@ import type { Editor } from '@tiptap/react';
 import { useEditorState } from '@tiptap/react';
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowUpDown, Baseline, Bold, ChevronDown, Highlighter, ImageIcon, IndentDecrease, IndentIncrease, Italic, Link as LinkIcon,
-  List, ListOrdered, MoveHorizontal, Redo2, Table2, Underline, Undo2,
+  List, ListOrdered, MoveHorizontal, Redo2, Smile, Table2, Underline, Undo2,
 } from 'lucide-react';
 import { Popover } from './Popover.tsx';
-import { COLOURS, FONT_CHOICES, SIZES } from './fonts.ts';
+import { COLOURS, SIZES } from './fonts.ts';
+import { FontBox } from '../components/FontBox.tsx';
 import { cn } from '../lib/cn.ts';
 
 /**
@@ -17,15 +18,15 @@ import { cn } from '../lib/cn.ts';
 const STYLES = [['normal', 'Normal text'], ['title', 'Title'], ['subtitle', 'Subtitle'], ['h1', 'Heading 1'], ['h2', 'Heading 2'], ['h3', 'Heading 3']] as const;
 const LINE = [[null, 'Default'], [1, 'Single'], [1.15, '1.15'], [1.5, '1.5'], [2, 'Double']] as const;
 
-const Sep = () => <span className="mx-0.5 h-5 w-px self-center bg-line" aria-hidden />;
+export const Sep = () => <span className="mx-0.5 h-5 w-px self-center bg-line" aria-hidden />;
 
-function Btn({ label, onClick, active, disabled, children }: { label: string; onClick: () => void; active?: boolean; disabled?: boolean; children: React.ReactNode }) {
+export function Btn({ label, onClick, active, disabled, children }: { label: string; onClick: () => void; active?: boolean; disabled?: boolean; children: React.ReactNode }) {
   return <button type="button" className={cn('btn btn-ghost tb-btn', active && 'tb-on')} aria-label={label} title={label} aria-pressed={active} disabled={disabled}
     onMouseDown={(e) => e.preventDefault()} onClick={onClick}>{children}</button>;
 }
 
 /** Docs-style split button: the icon applies the last colour used, the arrow opens the palette. */
-function SplitColour({ label, icon, last, onApply, onPick }: { label: string; icon: React.ReactNode; last: string; onApply: (c: string) => void; onPick: (c: string) => void }) {
+export function SplitColour({ label, icon, last, onApply, onPick }: { label: string; icon: React.ReactNode; last: string; onApply: (c: string) => void; onPick: (c: string) => void }) {
   return (
     <span className="inline-flex items-center">
       <button type="button" className="btn btn-ghost tb-btn" aria-label={`${label} (${last})`} title={label} onMouseDown={(e) => e.preventDefault()} onClick={() => onApply(last)}>
@@ -45,7 +46,7 @@ function SplitColour({ label, icon, last, onApply, onPick }: { label: string; ic
   );
 }
 
-export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; width: number; setWidth: (w: number) => void; base: { font: string; size: number } }) {
+export function Toolbar({ editor, width, setWidth, marginL, marginR, setMargins, base, widthKey, linkKey, onEmoji }: { editor: Editor; width: number; setWidth: (w: number) => void; marginL: number; marginR: number; setMargins: (l: number, r: number) => void; base: { font: string; size: number }; widthKey: number; linkKey: number; onEmoji: () => void }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -106,10 +107,7 @@ export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; wid
       <select aria-label="Paragraph style" className="input !w-28 !py-1 text-sm" value={s.style} onChange={(e) => setStyle(e.target.value)}>
         {STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
-      <select aria-label="Font" className="input !w-32 !py-1 text-sm" value={s.font} onChange={(e) => run().setFontFamily(e.target.value).run()}>
-        {!FONT_CHOICES.includes(s.font) && <option value={s.font}>{s.font}</option>}
-        {FONT_CHOICES.map((f) => <option key={f} value={f}>{f}</option>)}
-      </select>
+      <FontBox value={s.font} onPick={(f) => run().setFontFamily(f).run()} />
       <input aria-label="Font size" list="font-sizes" className="input !w-14 !px-1 !py-1 text-center text-sm" inputMode="decimal" value={sizeText ?? s.size}
         onFocus={(e) => e.currentTarget.select()} onChange={(e) => setSizeText(e.target.value)} onBlur={() => sizeText !== null && applySize(sizeText)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applySize(sizeText ?? s.size); } }} />
@@ -134,7 +132,7 @@ export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; wid
       <Btn label="Decrease indent" onClick={() => run().liftListItem('listItem').run()}><IndentDecrease size={16} /></Btn>
       <Btn label="Increase indent" onClick={() => run().sinkListItem('listItem').run()}><IndentIncrease size={16} /></Btn>
       <Sep />
-      <Popover label="Insert link (Ctrl+K)" trigger={<LinkIcon size={16} />} className={s.link ? 'tb-on' : ''}>
+      <Popover label="Insert link (Ctrl+K)" openKey={linkKey} trigger={<LinkIcon size={16} />} className={s.link ? 'tb-on' : ''}>
         {(close) => (
           <form className="flex w-72 items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); setLink(linkText || s.linkHref, close); }}>
             <input autoFocus aria-label="Link address" className="input !py-1 text-sm" placeholder="https://…" defaultValue={s.linkHref} onChange={(e) => setLinkText(e.target.value)} />
@@ -143,6 +141,7 @@ export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; wid
           </form>
         )}
       </Popover>
+      <Btn label="Insert emoji" onClick={onEmoji}><Smile size={16} /></Btn>
       <Btn label="Insert image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/bmp" hidden onChange={(e) => { insertImage(e.target.files?.[0]); e.target.value = ''; }} />
       <Popover label="Table" trigger={<Table2 size={16} />}>
@@ -167,11 +166,15 @@ export function Toolbar({ editor, width, setWidth, base }: { editor: Editor; wid
         }}
       </Popover>
       <span className="flex-1" />
-      <Popover label="Text width" trigger={<span className="flex items-center gap-1 text-sm"><MoveHorizontal size={16} />Width</span>}>
+      <Popover label="Text width and margins (Ctrl+Alt+W)" openKey={widthKey} trigger={<span className="flex items-center gap-1 text-sm"><MoveHorizontal size={16} />Width</span>}>
         {() => (
-          <label className="block w-60 text-xs text-muted">Text width: <span className="tabular-nums text-fg">{width}px</span>
-            <input type="range" min={480} max={1200} step={20} value={width} onChange={(e) => setWidth(Number(e.target.value))} className="bt-range bt-hit mt-1 w-full" style={{ '--p': `${((width - 480) / 720) * 100}%` } as React.CSSProperties} />
-          </label>
+          <div className="w-64 space-y-3">
+            {([['Text width', width, 480, 1200, 20, (v: number) => setWidth(v)], ['Left margin', marginL, 0, 300, 10, (v: number) => setMargins(v, marginR)], ['Right margin', marginR, 0, 300, 10, (v: number) => setMargins(marginL, v)]] as const).map(([l, v, lo, hi, st, set]) => (
+              <label key={l} className="block text-xs text-muted">{l}: <span className="tabular-nums text-fg">{v}px</span>
+                <input type="range" min={lo} max={hi} step={st} value={v} onChange={(e) => set(Number(e.target.value))} className="bt-range bt-hit mt-1 w-full" style={{ '--p': `${((v - lo) / (hi - lo)) * 100}%` } as React.CSSProperties} />
+              </label>
+            ))}
+          </div>
         )}
       </Popover>
     </div>

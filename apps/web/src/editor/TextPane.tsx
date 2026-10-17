@@ -4,6 +4,7 @@ import { findInString, NO_SEARCH, replaceAllInString, replacementFor, type FindO
 import { DocHeader } from './DocHeader.tsx';
 import { StatusBar, words } from './StatusBar.tsx';
 import { useSaver } from './useSaver.ts';
+import { useAutosave } from './useAutosave.ts';
 import { renderMarkdown } from '../lib/markdown.ts';
 import { setDirty } from '../lib/dirty.ts';
 import { usePref } from '../lib/pref.ts';
@@ -26,7 +27,11 @@ export function TextPane({ initial, kind, path, name }: { initial: string; kind:
   const index = matches.length ? Math.min(cur, matches.length - 1) : 0;
   const select = useCallback((i: number) => { const m = matches[i]; const ta = area.current; if (!m || !ta) return; setCur(i); ta.focus(); ta.setSelectionRange(m.from, m.to); document.querySelector<HTMLInputElement>('[role=search] input')?.focus(); }, [matches]);
   const saver = useSaver({ path, name, warnings: [], getBytes: async () => (crlf ? text.replace(/\n/g, '\r\n') : text) });
-  const doSave = async (as = false) => { if (await saver.save(as)) setDirtyState(false); };
+  const newKey = useRef(`new:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
+  const autosave = useAutosave(saver.path ?? newKey.current, async () => (crlf ? text.replace(/\n/g, '\r\n') : text));
+  const textRef = useRef(text); textRef.current = text;
+  useEffect(() => { if (dirty) autosave.touch(); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  const doSave = async (as = false) => { if (await saver.save(as)) { setDirtyState(false); autosave.clear(); } };
   useEffect(() => () => setDirty(false), []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -41,6 +46,13 @@ export function TextPane({ initial, kind, path, name }: { initial: string; kind:
   return (
     <div className="flex h-full min-h-0 flex-col">
       <DocHeader name={saver.name} path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />
+      {autosave.found && (
+        <div role="alert" className="tk-expand mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-theme border border-accent bg-accent/10 px-3 py-2 text-sm">
+          <span className="flex-1">Unsaved changes from {new Date(autosave.found.at).toLocaleString()} were backed up. Restore them?</span>
+          <button className="btn btn-accent text-sm" onClick={() => { setText(new TextDecoder('utf-8').decode(autosave.found!.bytes).replace(/\r\n?/g, '\n')); setDirty(true); setDirtyState(true); autosave.dismiss(); }}>Restore</button>
+          <button className="btn text-sm" onClick={() => { autosave.clear(); autosave.dismiss(); }}>Discard</button>
+        </div>
+      )}
       {find.open && <FindBar replaceMode={find.replace} focusKey={find.n} count={matches.length} index={index}
         onClose={() => { setFind((f) => ({ ...f, open: false })); area.current?.focus(); }} onSearch={(o) => { setFo(o); setCur(0); }}
         onStep={(d) => select((index + d + matches.length) % matches.length)}
