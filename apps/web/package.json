@@ -44,7 +44,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
-    "turbothemes": "git+https://github.com/TurboNZL/turboengine.git#4b739fb570f88ad6f4df3a876c8203338b871e8a&path:/themes"
+    "turbothemes": "git+https://github.com/TurboNZL/turboengine.git#f45cd8091cecb5065c4047a28d7bfbc4c80979d9&path:/themes"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

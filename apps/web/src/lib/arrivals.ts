@@ -14,4 +14,3 @@ export function useArrivals(keys: string[]): ReadonlySet<string> {
   for (const [k, until] of fresh.current) if (until < now) fresh.current.delete(k);
   return new Set(fresh.current.keys());
 }
-

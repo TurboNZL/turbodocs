@@ -23,6 +23,7 @@ export function DocsSettings() {
   return (
     <div className="space-y-5">
       <Section title="General">
+        <Check id="animations" label="Animations" hint="Pages, menus and windows slide and fade in. Your system's reduce-motion setting turns them off as well." />
         <Num id="backupSec" label="Back up after idle for" min={0.5} max={120} step={0.5} suffix="seconds" />
         <p className="text-xs text-muted">While you type, a copy of the unsaved document is kept in the app's autosave folder and offered back if the app closes unexpectedly. Your file is only changed when you save.</p>
         <label className="flex items-center gap-3 py-1 text-sm"><span className="w-44">Default folder</span><input className="input !py-1" placeholder="The system's choice" value={p.defaultDir} onChange={(e) => setDocPrefs({ defaultDir: e.target.value })} aria-label="Default folder" /></label>

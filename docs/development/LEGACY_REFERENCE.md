@@ -1,6 +1,6 @@
 # Reference: the original TurboDocs (Python / Qt)
 
-The editor in the new app copies the **intent and layout** of the first TurboDocs, which lives on the branch `legacy/python`. These screenshots were taken by running that branch headless (`reference/legacy-python/capture.py`, PySide6 with `QT_QPA_PLATFORM=offscreen`, a generated 37-word `.docx`), so they are the real thing, not mock-ups. Check them before changing the editor's layout.
+The editor in the new app copies the **intent and layout** of the first TurboDocs, which lived on the branch `legacy/python`. **That branch was deleted on 2026-10-17, once everything below was ported.** Nothing was lost: its last commit, `e14febc`, is an ancestor of `main` (`git show e14febc:turbodocs/prefs.py`), and its uninstall script is `scripts/uninstall-legacy-python.sh`. These screenshots were taken by running that branch headless (`reference/legacy-python/capture.py`, PySide6 with `QT_QPA_PLATFORM=offscreen`, a generated 37-word `.docx`), so they are the real thing, not mock-ups. Check them before changing the editor's layout.
 
 | | |
 |---|---|
@@ -52,25 +52,26 @@ Menus: [File](reference/legacy-python/menu-file.png), [Format](reference/legacy-
 Word's Heading 4 to 6 map to Heading 3. Defaults from `prefs.py`: column 760 px, margins 0, document font Carlito (metric-compatible with Calibri), 11 pt, zoom 100 %, backups after 1500 ms.
 
 ## Where the new editor stands against it
-Checked against the screenshots above by running the real app (Electron under Xvfb) and comparing.
+Every feature above is ported (checked 2026-10-17 by running the real Electron app and comparing; the file-level ones by reading the saved files back with python-docx and LibreOffice).
 
 | Legacy feature | New app |
 |---|---|
-| Pageless canvas on the theme background, centred column | done (`.docx`); default width 760 px |
-| Toolbar in the same order, split colour buttons, editable size | done, one row at 1280 px. No strikethrough or emoji button (the legacy toolbar had no strikethrough; emoji is not built) |
-| Paragraph styles with the table's values | done: Normal, Title, Subtitle, Heading 1 to 3 (+ bulleted and numbered list buttons) |
-| Status bar: word count (selection-aware), zoom slider | done; Ctrl + wheel zooms too |
-| Dashboard with New / New Markdown / Open / recent cards | done: New document, New Markdown, Open a file, Recent documents (name, how long ago, folder, first words, Clear list); the apps are listed below |
-| Width popup (width, margins) | width only (480 to 1200 px); no margins |
-| Menu bar (File, Edit, View, Insert, Format, Tools) | not yet: Save, Save as and "Original view" are buttons on the document header; table operations are in the Table menu |
-| Find and replace | done (Ctrl+F, Ctrl+H; match case, regular expressions, replace one / all) in the Word editor and the text editor |
-| Word count dialog, emoji, date, Paste as plain text | not yet (the status bar shows the word count) |
-| Document tabs panel (☰) and outline | not yet |
-| Images: insert; click to select, drag to resize, crop | insert only (size kept in the file); no resize handles, no crop |
-| Tables: insert, rows and columns, merge and split, cell colour, drag column borders | done (column borders are draggable); merged cells survive a save |
-| Crash backups after 1.5 s idle | not yet; instead the original file is copied to the app's backups folder before every overwrite |
-| Markdown separate from the docx | `.md` and `.txt` are edited as plain text and saved exactly (line endings kept); `.md` has a live preview. No rich Markdown editing |
-| Preferences dialog (document defaults, editing options) | Settings page: appearance, apps, guides, this app; no document defaults |
-| Per-document paragraph styles ("update to match selection") | the document's own styles are read, shown and written back (font, size, spacing, Title/Subtitle/Heading 1-3, page size and margins); editing the styles is not yet possible |
-| Registered as the application for .docx, .md, .txt ("Open with", default app) | done: the installer declares the types (checked in a built .deb); Settings › Apps › Default applications sets the default on Linux |
-| Google-Docs shortcuts | those TipTap provides: Ctrl+B/I/U/Z, Ctrl+Shift+L/E/R/J (align), Ctrl+Shift+7/8 (lists). Ctrl+K, Ctrl+\, Ctrl+Alt+0-3, Ctrl+F/H are not bound |
+| Pageless canvas on the theme background, centred column | done; width and left / right margins (Ctrl+Alt+W) |
+| Toolbar in the same order, split colour buttons, editable size | done, plus emoji; the colour popovers remember your custom colours |
+| Paragraph styles with the table's values; "update to match selection", reset, save as my defaults | done (Format › Paragraph styles); the document's own styles are read and written back |
+| Menu bar (File, Edit, View, Insert, Format, Tools) | done (`components/MenuBar.tsx`, `editor/docMenus.ts`) with the legacy's items, shortcuts and submenus, plus Open recent |
+| Status bar: word count (selection-aware), zoom | done; both can be hidden in Settings › Documents |
+| Dashboard: New / New Markdown / Open / recent cards, the tagline | done (New spreadsheet and New presentation added) |
+| Find and replace | done |
+| Word count dialog, emoji, date, paste as plain text | done (Ctrl+Shift+C, Insert › Emoji and `:shortcodes:`, Insert › Date and time, Edit › Paste as plain text and the "plain by default" option) |
+| Document tabs panel (☰) and outline | done (`editor/tabs.ts`, `OutlinePanel.tsx`). Tabs are stored as bookmarks `tdtab_<n>` around a title line (the legacy kept the titles in the core properties' comment, so a legacy file's tabs open as untitled sections) |
+| Images: select, resize by dragging, crop (non-destructive, saved as real docx crops), original size | done (`editor/ImageView.tsx`; the crop is written as `a:srcRect`, `docxExport.ts` `patchCrops`) |
+| Tables: insert, rows and columns, merge and split, cell colour, drag column borders | done |
+| Crash backups after 1.5 s idle, offered back after a crash | done (`useAutosave.ts`, main-process `turbodocs:autosave-*`); File › Reset session edits |
+| Markdown separate from the docx (Ctrl+S saves a `.md`) | done (View › Markdown view); `.md` and `.txt` files are also edited as plain text |
+| Preferences: General, Document defaults, Paragraph styles, Editing, Appearance | Settings › Documents (the first four, incl. default folder, reopen last document, backup delay) and Settings › Appearance |
+| Page colour | done (Format › Page colour; saved as the document background) |
+| Registered as the application for .docx, .md, .txt | done (and now .xlsx, .csv, .pptx) |
+| Google-Docs shortcuts | done: see `docs/guides/SHORTCUTS.md` |
+
+Not ported on purpose: the legacy's cursor-width and UI-size preferences (the theme and the system decide), and its Qt-specific "translucent window" and "smooth scroll" switches.

@@ -25,6 +25,10 @@ export function Btn({ label, onClick, active, disabled, children }: { label: str
     onMouseDown={(e) => e.preventDefault()} onClick={onClick}>{children}</button>;
 }
 
+const CUSTOM_KEY = 'turbodocs.customColours';
+const customColours = (): string[] => { try { const v = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string').slice(0, 9) : []; } catch { return []; } };
+const rememberCustom = (c: string) => { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify([c, ...customColours().filter((x) => x !== c)].slice(0, 9))); } catch { /* storage blocked */ } };
+
 /** Docs-style split button: the icon applies the last colour used, the arrow opens the palette. */
 export function SplitColour({ label, icon, last, onApply, onPick }: { label: string; icon: React.ReactNode; last: string; onApply: (c: string) => void; onPick: (c: string) => void }) {
   return (
@@ -38,7 +42,8 @@ export function SplitColour({ label, icon, last, onApply, onPick }: { label: str
             <div className="grid grid-cols-6 gap-1">
               {COLOURS.map((c) => <button key={c} type="button" role="menuitem" aria-label={c} title={c} className="h-5 w-5 rounded border border-line" style={{ background: c }} onClick={() => { onPick(c); close(); }} />)}
             </div>
-            <label className="mt-2 flex items-center justify-between gap-2 text-xs text-muted">Custom<input type="color" value={last} onChange={(e) => onPick(e.target.value)} className="h-6 w-10 cursor-pointer bg-transparent" /></label>
+            {customColours().length > 0 && <div className="mt-2 grid grid-cols-6 gap-1" aria-label="Your colours">{customColours().map((c) => <button key={c} type="button" role="menuitem" aria-label={c} title={c} className="h-5 w-5 rounded border border-line" style={{ background: c }} onClick={() => { onPick(c); close(); }} />)}</div>}
+            <label className="mt-2 flex items-center justify-between gap-2 text-xs text-muted">Custom<input type="color" value={last} onChange={(e) => { rememberCustom(e.target.value); onPick(e.target.value); }} className="h-6 w-10 cursor-pointer bg-transparent" /></label>
           </div>
         )}
       </Popover>

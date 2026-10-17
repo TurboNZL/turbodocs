@@ -133,3 +133,6 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .slide-thumb { border: 2px solid transparent; border-radius: 6px; padding: 2px; cursor: pointer; background: none; display: block; }
 .slide-thumb[aria-current="true"] { border-color: hsl(var(--accent)); }
 .slide-thumb.drop { border-color: hsl(var(--accent) / 0.5); border-style: dashed; }
+
+/* Settings > Documents > Animations off */
+html[data-motion="off"] .tk-arrive, html[data-motion="off"] .tk-swap, html[data-motion="off"] .tk-slide-in, html[data-motion="off"] .tk-pop, html[data-motion="off"] .tk-expand, html[data-motion="off"] .tk-fade, html[data-motion="off"] .bt-page, html[data-motion="off"] .docs-canvas { animation: none !important; transition: none !important; }

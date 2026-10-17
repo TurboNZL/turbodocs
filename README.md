@@ -2,7 +2,7 @@
 
 Documents, spreadsheets and presentations as small apps (modules) that install into one themed desktop shell.
 
-> **Status:** the shell works (window, themes, updates, Settings, module registry, offline fonts) and **Docs edits and saves `.docx`, `.md` and `.txt`** (see `docs/guides/APP_MODULES.md` for what a Word save keeps). Sheets and Slides are not built. Layout and intent follow the original Python app: `docs/development/LEGACY_REFERENCE.md`.
+> **Status:** the shell works (window, themes, updates, Settings, module registry, offline fonts) and all three apps open, edit and save: **Docs** (`.docx`, `.md`, `.txt`; everything the original Python app did, see `docs/development/LEGACY_REFERENCE.md`), **Sheets** (`.xlsx`, `.csv`; basic, formulas are kept but not calculated) and **Slides** (`.pptx`; a plain editor with a full-screen show). What a save keeps and what it does not is in `docs/guides/`.
 
 ## Run it
 

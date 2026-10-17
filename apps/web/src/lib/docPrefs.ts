@@ -6,13 +6,13 @@ import type { StyleDef } from '../editor/docxImport.ts';
  * NEW documents, per-style defaults and the editing options. One JSON value in localStorage, read through `useDocPrefs()`.
  */
 export interface DocPrefs {
-  backupSec: number; showWordCount: boolean; showZoom: boolean; reopenLast: boolean; confirmReset: boolean; defaultDir: string;
+  animations: boolean; backupSec: number; showWordCount: boolean; showZoom: boolean; reopenLast: boolean; confirmReset: boolean; defaultDir: string;
   docFont: string; docSize: number; line: number; after: number; width: number; marginL: number; marginR: number;
   styles: Partial<Record<'title' | 'subtitle' | 'h1' | 'h2' | 'h3', StyleDef>>;
   mdShortcuts: boolean; dashes: boolean; smartQuotes: boolean; emojiCodes: boolean; highlightLine: boolean; pastePlain: boolean;
 }
 export const DEFAULT_PREFS: DocPrefs = {
-  backupSec: 1.5, showWordCount: true, showZoom: true, reopenLast: false, confirmReset: true, defaultDir: '',
+  animations: true, backupSec: 1.5, showWordCount: true, showZoom: true, reopenLast: false, confirmReset: true, defaultDir: '',
   docFont: '', docSize: 11, line: 1.18, after: 6, width: 760, marginL: 0, marginR: 0, styles: {},
   mdShortcuts: true, dashes: true, smartQuotes: false, emojiCodes: true, highlightLine: false, pastePlain: false,
 };
@@ -30,6 +30,9 @@ export function setDocPrefs(patch: Partial<DocPrefs>): void {
   try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* storage blocked: the change lasts until the window closes */ }
   subs.forEach((f) => f());
 }
+/** Settings > Documents > "Animations": off removes the app's motion (the OS's reduce-motion setting already does). */
+export const applyMotionPref = () => { document.documentElement.dataset.motion = read().animations ? 'on' : 'off'; };
+subs.add(() => { if (typeof document !== 'undefined') applyMotionPref(); });
 export const resetDocPrefs = () => { cache = { ...DEFAULT_PREFS }; try { localStorage.removeItem(KEY); } catch { /* ignore */ } subs.forEach((f) => f()); };
 export const useDocPrefs = (): DocPrefs => useSyncExternalStore((f) => { subs.add(f); return () => { subs.delete(f); }; }, read);
 
