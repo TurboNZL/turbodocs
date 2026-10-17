@@ -1,10 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
 import { AppearancePicker } from '../components/AppearancePicker.tsx';
 import { AppsTab } from '../components/AppsTab.tsx';
+import { DocsSettings } from '../components/DocsSettings.tsx';
 import { GuidesTab } from '../components/GuidesTab.tsx';
 import { ThisApp } from '../components/ThisApp.tsx';
 
-const TABS = [{ id: 'look', label: 'Appearance' }, { id: 'apps', label: 'Apps' }, { id: 'guides', label: 'Guides' }, { id: 'app', label: 'This app' }];
+const TABS = [{ id: 'look', label: 'Appearance' }, { id: 'apps', label: 'Apps' }, { id: 'docs', label: 'Documents' }, { id: 'guides', label: 'Guides' }, { id: 'app', label: 'This app' }];
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -17,6 +18,7 @@ export function SettingsPage() {
       </div>
       {tab === 'look' && <AppearancePicker />}
       {tab === 'apps' && <AppsTab />}
+      {tab === 'docs' && <DocsSettings />}
       {tab === 'guides' && <GuidesTab />}
       {tab === 'app' && <ThisApp />}
     </div>

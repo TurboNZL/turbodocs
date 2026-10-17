@@ -6,6 +6,10 @@ import { Search } from './search.ts';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
+import { ReactNodeViewRenderer } from '@tiptap/react';
+import { ImageView } from './ImageView.tsx';
+import { DocTabs } from './tabs.ts';
+import { Typing, type TypingOptions } from './typing.ts';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 
 /** Title and Subtitle are paragraphs with a `pstyle`; headings are real heading nodes. Line height is per paragraph. */
@@ -17,6 +21,12 @@ const ParagraphStyle = Extension.create({
         types: ['paragraph'],
         attributes: {
           pstyle: { default: null, parseHTML: (el) => el.getAttribute('data-pstyle'), renderHTML: (a) => (a.pstyle ? { 'data-pstyle': a.pstyle, class: `p-${a.pstyle}` } : {}) },
+        },
+      },
+      {
+        types: ['paragraph'],
+        attributes: {
+          tab: { default: null, parseHTML: (el) => el.getAttribute('data-tab'), renderHTML: (a) => (a.tab ? { 'data-tab': a.tab, class: 'p-tab' } : {}) },
         },
       },
       {
@@ -39,18 +49,20 @@ const cellColour = {
   },
 };
 
-/** Pictures keep their size: `width` and `height` in px. */
+/** Pictures keep their size (`width`, `height` in px) and a non-destructive `crop` (fractions cut from each side); ImageView draws them. */
 const SizedImage = Image.extend({
+  addNodeView() { return ReactNodeViewRenderer(ImageView, { as: 'span' } as never); },
   addAttributes() {
     return {
       ...this.parent?.(),
+      crop: { default: null, parseHTML: () => null, renderHTML: () => ({}) },
       width: { default: null, parseHTML: (el) => Number(el.getAttribute('width')) || null, renderHTML: (a) => (a.width ? { width: a.width } : {}) },
       height: { default: null, parseHTML: (el) => Number(el.getAttribute('height')) || null, renderHTML: (a) => (a.height ? { height: a.height } : {}) },
     };
   },
 });
 
-export const editorExtensions = [
+export const makeExtensions = (typing: TypingOptions) => [
   StarterKit.configure({ heading: { levels: [1, 2, 3] }, code: false, codeBlock: false, link: { openOnClick: false, autolink: false, protocols: ['mailto', 'tel'] } }),
   TextStyle, Color, FontSize,
   FontFamily.extend({
@@ -63,5 +75,8 @@ export const editorExtensions = [
   SizedImage.configure({ inline: true, allowBase64: true }),
   Table.configure({ resizable: true }),
   TableRow, TableHeader.extend(cellColour), TableCell.extend(cellColour),
-  ParagraphStyle, Search,
+  ParagraphStyle, Search, DocTabs, Typing.configure(typing),
 ];
+
+/** the schema every test and tool uses: default typing options */
+export const editorExtensions = makeExtensions({ dashes: true, smartQuotes: false, emojiCodes: true, highlightLine: false });

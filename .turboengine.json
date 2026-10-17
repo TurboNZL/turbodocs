@@ -1,7 +1,7 @@
 {
   "engine": {
     "repo": "TurboNZL/turboengine",
-    "ref": "7dbbe2eb0f35850b83e2c83edae89ca9d144077e"
+    "ref": "f45cd8091cecb5065c4047a28d7bfbc4c80979d9"
   },
   "modules": [
     "release-pipeline",
@@ -10,13 +10,17 @@
     "guides-and-docs",
     "window-frame",
     "gpu-modes",
-    "logos"
+    "logos",
+    "system-fonts",
+    "motion"
   ],
-  "themes": "on (full pack: themes/; the open pack themes-open/ is for apps that are or may be sold)",
+  "themes": "on (full pack: themes/; TurboDocs has its own light and dark pair there, themes/turbodocs/, first-run default; the open pack themes-open/ is for apps that are or may be sold)",
   "moved": {
     "modules/window-frame/files/apps/electron/src/main.ts": "apps/electron/src/main.ts (rewritten: no library server, no Discord, no Cloudflare Access)",
     "modules/appearance/files/apps/web/src/lib/appearance.ts": "apps/web/src/lib/appearance.ts (rewritten: persist + <turbo-themes-picker>)",
-    "modules/appearance/files/apps/web/src/components/AppearanceCard.tsx": "apps/web/src/components/AppearancePicker.tsx (rewritten on the headless controller, same mock-page idea)"
+    "modules/appearance/files/apps/web/src/components/AppearanceCard.tsx": "apps/web/src/components/AppearancePicker.tsx (rewritten on the headless controller, same mock-page idea)",
+    "src/app/systemFonts.ts": "apps/web/src/lib/systemFonts.ts",
+    "test/systemFonts.test.ts": "apps/web/test/systemFonts.test.ts"
   },
-  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), discord-presence and cloudflare-access (no server, no Discord), appearance layouts and the Curator AppearanceCard (replaced by components/AppearancePicker.tsx; one fixed side-bar layout). Fonts are bundled with apps/web/scripts/gen-fonts.mjs instead of the CDN. The turbothemes dependency is pinned in apps/web/package.json to the same commit as engine.ref (pnpm then records an https tarball, no SSH address). Logo: branding/logo.json, emblem 'doc' in teal #1fc8a9 (change it if another app uses that hue); regenerate icons, never edit them."
+  "notes": "Not taken from the engine on purpose: editions (no server; TurboDocs has app modules instead, see CLAUDE.md), settings-shell (no pairing), android-shell (desktop only for now), discord-presence and cloudflare-access (no server, no Discord), appearance layouts and the Curator AppearanceCard (replaced by components/AppearancePicker.tsx; one fixed side-bar layout). Fonts of the themes are bundled with apps/web/scripts/gen-fonts.mjs instead of the CDN; the installed fonts for the font boxes come from `system-fonts` (apps/web/src/components/FontBox.tsx draws them). The turbothemes dependency is pinned in apps/web/package.json to the same commit as engine.ref (pnpm then records an https tarball, no SSH address). Logo: branding/logo.json, emblem 'doc' in teal #1fc8a9 (change it if another app uses that hue); regenerate icons, never edit them."
 }

@@ -12,7 +12,7 @@ export interface TurboDocsDesktop {
   version: string; platform: string; desktopEnv: string; port: number; customFrame: boolean;
   modules(): Promise<ModuleInfo[]>;
   setModule(id: string, on: boolean): Promise<ModuleInfo[]>;
-  openDialog(): Promise<OpenRequest[]>;
+  openDialog(dir?: string): Promise<OpenRequest[]>;
   takePending(): Promise<OpenRequest[]>;
   defaultApps(): Promise<DefaultApps>;
   setDefaultApps(mimes: string[]): Promise<DefaultApps>;
@@ -23,7 +23,13 @@ export interface TurboDocsDesktop {
   /** replaces a file that was opened or chosen with Save as (the old one is copied to the app's backups first); text is saved as UTF-8 */
   writeFile(path: string, bytes: Uint8Array | string): Promise<void>;
   /** the Save as dialog; null when cancelled */
-  saveDialog(suggestedName: string): Promise<string | null>;
+  saveDialog(suggestedName: string, dir?: string): Promise<string | null>;
+  /** cut / copy / paste / pasteAndMatchStyle / selectAll on the focused page, through the system clipboard */
+  editCommand(name: 'cut' | 'copy' | 'paste' | 'pasteAndMatchStyle' | 'selectAll'): void;
+  /** crash backups: a copy of the unsaved document, kept beside the real file (key = its path, or `new:<id>`) */
+  autosaveWrite(key: string, bytes: Uint8Array | string): Promise<void>;
+  autosaveRead(key: string): Promise<{ at: number; bytes: Uint8Array } | null>;
+  autosaveClear(key: string): Promise<void>;
   /** tells the window whether there are unsaved changes (closing then asks first) */
   setDirty(on: boolean): void;
   /** the bytes of a file that was opened through TurboDocs (the main process refuses any other path) */
@@ -32,7 +38,7 @@ export interface TurboDocsDesktop {
   updates: import('./native.ts').NativeUpdates;
   getGpu?(): Promise<GpuInfo>; gpuReport?(): Promise<string>; openGpuPage?(): void; setGpu?(mode: string): Promise<void>;
   getGraphics?(): Promise<{ hardware: boolean; summary: string; detail: string }>;
-  windowControl?(action: 'minimize' | 'maximize' | 'close'): void;
+  windowControl?(action: 'minimize' | 'maximize' | 'close' | 'fullscreen'): void;
   setCustomFrame?(on: boolean): Promise<void>;
   onWindowState?(cb: (maximized: boolean) => void): () => void;
 }

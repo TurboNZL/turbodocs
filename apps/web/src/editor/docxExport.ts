@@ -1,5 +1,6 @@
+import JSZip from 'jszip';
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, ImageRun, LevelFormat, Packer, Paragraph, ShadingType, Tab, Table, TableCell, TableRow,
+  AlignmentType, BorderStyle, Bookmark, Document, ExternalHyperlink, HeadingLevel, ImageRun, LevelFormat, Packer, Paragraph, ShadingType, Tab, Table, TableCell, TableRow,
   TextRun, UnderlineType, WidthType, type ParagraphChild,
 } from 'docx';
 import { FACTORY_STYLES, type DocStyles, type Json, type StyleDef } from './docxImport.ts';
@@ -34,6 +35,8 @@ function decodeImage(src: string): { type: 'png' | 'jpg' | 'gif' | 'bmp'; data: 
 export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES): Promise<Exported> {
   const warnings = new Set<string>();
   const orderedRefs: string[] = [];
+  const crops: ({ l: number; t: number; r: number; b: number } | null)[] = []; // one per picture, in document order (patched into the XML below)
+  let tabNo = 0;
 
   const runProps = (marks: NonNullable<Json['marks']> | undefined) => {
     const o: Record<string, unknown> = {};
@@ -74,6 +77,8 @@ export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES):
         const img = typeof n.attrs?.src === 'string' ? decodeImage(n.attrs.src) : null;
         if (!img) { warnings.add('A picture in a format Word files cannot hold here (for example SVG) was left out.'); continue; }
         const w = Number(n.attrs?.width) || 240, h = Number(n.attrs?.height) || Math.round(w * 0.6);
+        const c = n.attrs?.crop as { l: number; t: number; r: number; b: number } | undefined;
+        crops.push(c && (c.l || c.t || c.r || c.b) ? c : null);
         out.push(new ImageRun({ type: img.type, data: img.data, transformation: { width: w, height: h }, altText: { name: 'image', description: String(n.attrs?.alt ?? ''), title: '' } }));
       }
     }
@@ -93,6 +98,11 @@ export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES):
     if (n.type === 'heading') {
       const lvl = Math.min(Math.max(Number(a.level) || 1, 1), 3);
       return new Paragraph({ heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][lvl - 1], style: `Heading${lvl}`, ...paraOpts(n), ...extra, children: inline(n.content) });
+    }
+    if (typeof a.tab === 'string' && a.tab) {
+      // a tab of the document: its title line, wrapped in a bookmark Word keeps (and the first TurboDocs used for its tabs)
+      const name = /^tdtab_\d+$/.test(a.tab) ? a.tab : `tdtab_${++tabNo}`;
+      return new Paragraph({ ...paraOpts(n), ...extra, children: [new Bookmark({ id: name, children: inline(n.content) })] });
     }
     const style = a.pstyle === 'title' ? 'Title' : a.pstyle === 'subtitle' ? 'Subtitle' : undefined;
     return new Paragraph({ ...(style ? { style } : {}), ...paraOpts(n), ...extra, children: inline(n.content) });
@@ -173,6 +183,7 @@ export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES):
   });
   const document = new Document({
     creator: 'TurboDocs',
+    ...(hex(styles.pageColor) ? { background: { color: hex(styles.pageColor) } } : {}),
     styles: {
       default: { document: { run: { font: styles.font, size: pt(styles.size) }, paragraph: { spacing: { after: Math.round(styles.after * PX), line: Math.round(styles.line * 240), lineRule: 'auto' } } } },
       paragraphStyles: [head('Title', 'Title', styles.title), head('Subtitle', 'Subtitle', styles.subtitle), head('Heading1', 'heading 1', styles.h1), head('Heading2', 'heading 2', styles.h2), head('Heading3', 'heading 3', styles.h3)],
@@ -185,5 +196,22 @@ export async function exportDocx(doc: Json, styles: DocStyles = FACTORY_STYLES):
     }],
   } as never);
   const blob = await Packer.toBlob(document);
-  return { bytes: new Uint8Array(await blob.arrayBuffer()), warnings: [...warnings] };
+  const raw = new Uint8Array(await blob.arrayBuffer());
+  return { bytes: crops.some(Boolean) ? await patchCrops(raw, crops) : raw, warnings: [...warnings] };
+}
+
+/** docx has no crop option for pictures: add `<a:srcRect>` (what Word writes for Crop) after each picture's `<a:blip>`, in document order. */
+async function patchCrops(bytes: Uint8Array, crops: ({ l: number; t: number; r: number; b: number } | null)[]): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(bytes);
+  const xml = await zip.file('word/document.xml')?.async('string');
+  if (!xml) return bytes;
+  let i = 0;
+  const pct = (v: number) => Math.round(Math.min(0.95, Math.max(0, v)) * 100000);
+  // docx writes an empty <a:srcRect/> after every picture's blip; ours replaces it (a picture has exactly one)
+  const out = xml.replace(/(<pic:blipFill>\s*<a:blip\b[^>]*?(?:\/>|>\s*<\/a:blip>))(\s*<a:srcRect\s*\/>)?/g, (m, blip: string) => {
+    const c = crops[i++];
+    return c ? `${blip}<a:srcRect l="${pct(c.l)}" t="${pct(c.t)}" r="${pct(c.r)}" b="${pct(c.b)}"/>` : m;
+  });
+  zip.file('word/document.xml', out);
+  return await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }

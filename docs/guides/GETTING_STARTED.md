@@ -6,10 +6,12 @@ TurboDocs is a desktop app that opens your documents, spreadsheets and presentat
 - **Home › Open a file** and pick one, or
 - start TurboDocs from your file manager with "Open with TurboDocs", or from a terminal: `turbodocs report.docx`.
 
-If the module for that file type is not installed (or not built yet), TurboDocs tells you which one it needs.
+If the module for that file type is not installed, TurboDocs tells you which one it needs. **Home** also starts a new document, Markdown file, spreadsheet or presentation.
 
 ## Change the look
 **Settings › Appearance** lists the colour themes and interface styles (Windows 7 to 11, macOS, GNOME, KDE Breeze, Material and more). Your choice is remembered. "Match this device" picks the look of the system you are on.
+
+**Settings › Documents** holds the editor's preferences (backup delay, defaults for new documents, paragraph styles, typing options, animations).
 
 **Settings › This app › Window** can draw the window's title bar in the chosen style (applies after a restart).
 

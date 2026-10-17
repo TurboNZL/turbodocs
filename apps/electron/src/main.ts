@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { findWebDir, loadDesktopConfig, loadRecent, loadUpdateToken, saveDesktopConfig, saveRecent, saveUpdateToken } from './desktopConfig.ts';
 import { startStaticServer } from './staticServer.ts';
 import { filesFromArgv, isInstalled, MIME_TYPES, mimeRows, MODULES, moduleFor } from './modules.ts';
@@ -143,9 +144,9 @@ ipcMain.handle('turbodocs:module-set', (_e, id: unknown, on: unknown) => {
   return moduleList();
 });
 ipcMain.handle('turbodocs:take-pending', () => pending.splice(0).map(openRequest));
-ipcMain.handle('turbodocs:open-dialog', async () => {
+ipcMain.handle('turbodocs:open-dialog', async (_e, dir: unknown) => {
   const r = await dialog.showOpenDialog(win ?? undefined!, {
-    title: 'Open', properties: ['openFile', 'multiSelections'],
+    title: 'Open', ...(typeof dir === 'string' && dir ? { defaultPath: dir } : {}), properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Documents', extensions: MODULES.flatMap((m) => m.extensions.map((x) => x.slice(1))) }, ...MODULES.map((m) => ({ name: m.title, extensions: m.extensions.map((x) => x.slice(1)) })), { name: 'All files', extensions: ['*'] }],
   });
   return r.canceled ? [] : r.filePaths.map(openRequest);
@@ -183,15 +184,46 @@ ipcMain.handle('turbodocs:write-file', async (_e, path: unknown, bytes: unknown)
   const tmp = `${path}.turbodocs-tmp`;
   try { await writeFile(tmp, data); await rename(tmp, path); } catch (e) { await unlink(tmp).catch(() => undefined); throw e; }
 });
-ipcMain.handle('turbodocs:save-dialog', async (_e, suggested: unknown) => {
+ipcMain.handle('turbodocs:save-dialog', async (_e, suggested: unknown, dir: unknown) => {
   const name = typeof suggested === 'string' && suggested ? basename(suggested) : 'Untitled.docx';
   const ext = extname(name).slice(1) || 'docx';
-  const r = await dialog.showSaveDialog(win ?? undefined!, { title: 'Save as', defaultPath: name, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+  const r = await dialog.showSaveDialog(win ?? undefined!, { title: 'Save as', defaultPath: typeof dir === 'string' && dir ? join(dir, name) : name, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
   if (r.canceled || !r.filePath) return null;
   const path = extname(r.filePath) ? r.filePath : `${r.filePath}.${ext}`;
   if (!moduleFor(path)) return null;
   allowed.add(resolve(path));
   return path;
+});
+/** Edit menu: Cut, Copy and Paste go through the window so they use the system clipboard exactly as the keyboard shortcuts do. */
+const EDIT_COMMANDS = ['cut', 'copy', 'paste', 'pasteAndMatchStyle', 'selectAll'] as const;
+ipcMain.on('turbodocs:edit-command', (e, name: unknown) => {
+  if (typeof name === 'string' && (EDIT_COMMANDS as readonly string[]).includes(name)) (e.sender as unknown as Record<string, () => void>)[name]();
+});
+/**
+ * Crash backups. The editor hands over the document 1.5 s after the last keystroke; it is kept in <userData>/autosave under a hash of the document's path (or of
+ * "new:<id>" for one that was never saved) and offered back next time. Saving the document removes it. This is a copy beside the real file, never instead of it.
+ */
+const autosaveFile = (key: string, ext: string) => join(userData(), 'autosave', `${createHash('sha1').update(key).digest('hex')}.${ext}`);
+const validKey = (key: unknown): key is string => typeof key === 'string' && key.length > 0 && key.length < 2048 && (key.startsWith('new:') || allowed.has(resolve(key)));
+ipcMain.handle('turbodocs:autosave-write', async (_e, key: unknown, bytes: unknown) => {
+  if (!validKey(key)) throw new Error('Not a document of this session.');
+  const data = bytes instanceof Uint8Array ? bytes : typeof bytes === 'string' ? Buffer.from(bytes, 'utf8') : null;
+  if (!data || data.length > MAX_FILE) return;
+  await mkdir(join(userData(), 'autosave'), { recursive: true });
+  const f = autosaveFile(key, 'bin');
+  await writeFile(`${f}.tmp`, data); await rename(`${f}.tmp`, f);
+  await writeFile(autosaveFile(key, 'json'), JSON.stringify({ key, at: Date.now() }));
+});
+ipcMain.handle('turbodocs:autosave-read', async (_e, key: unknown) => {
+  if (!validKey(key)) return null;
+  try {
+    const meta = JSON.parse(await readFile(autosaveFile(key, 'json'), 'utf8')) as { at: number };
+    return { at: meta.at, bytes: await readFile(autosaveFile(key, 'bin')) };
+  } catch { return null; }
+});
+ipcMain.handle('turbodocs:autosave-clear', async (_e, key: unknown) => {
+  if (!validKey(key)) return;
+  await Promise.all([autosaveFile(key, 'bin'), autosaveFile(key, 'json')].map((f) => unlink(f).catch(() => undefined)));
 });
 /** The page tells us when the document has unsaved changes; closing the window then asks first. */
 let dirty = false;
@@ -247,6 +279,7 @@ ipcMain.on('turbodocs:window', (e, action: string) => {
   if (action === 'minimize') w.minimize();
   else if (action === 'maximize') { if (w.isMaximized()) w.unmaximize(); else w.maximize(); }
   else if (action === 'close') w.close();
+  else if (action === 'fullscreen') w.setFullScreen(!w.isFullScreen());
 });
 ipcMain.handle('turbodocs:set-frame', async (_e, on: unknown) => {
   saveDesktopConfig(userData(), { customFrame: on === true });

@@ -125,6 +125,27 @@
         "description": "Text document",
         "mimeType": "text/plain",
         "role": "Editor"
+      },
+      {
+        "ext": "xlsx",
+        "name": "Excel workbook",
+        "description": "Excel workbook",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "role": "Editor"
+      },
+      {
+        "ext": "csv",
+        "name": "CSV table",
+        "description": "Comma-separated values",
+        "mimeType": "text/csv",
+        "role": "Editor"
+      },
+      {
+        "ext": "pptx",
+        "name": "PowerPoint presentation",
+        "description": "PowerPoint presentation",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "role": "Editor"
       }
     ]
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pushRecent, snippetFromDocxXml, snippetFromText } from '../src/recent.ts';
+import { pushRecent, snippetFromDocxXml, snippetFromPptxXml, snippetFromSharedStrings, snippetFromText } from '../src/recent.ts';
 
 describe('recent documents list', () => {
   it('puts the newest first, keeps each file once, and caps the length', () => {
@@ -24,5 +24,14 @@ describe('card previews', () => {
     expect(s.length).toBeLessThanOrEqual(160);
     expect(s.endsWith('…')).toBe(true);
     expect(snippetFromText('a\n\n  b\tc')).toBe('a b c');
+  });
+});
+
+describe('previews of spreadsheets and presentations', () => {
+  it('lists the first slide\'s text', () => {
+    expect(snippetFromPptxXml('<p:sld><a:t>Quarterly &amp; review</a:t><a:t> </a:t><a:t lang="en">Plans</a:t></p:sld>')).toBe('Quarterly & review · Plans');
+  });
+  it('lists the first texts of a workbook', () => {
+    expect(snippetFromSharedStrings('<sst><si><t>Item</t></si><si><r><t>Cof</t></r><r><t>fee</t></r></si><si><t xml:space="preserve"> </t></si></sst>')).toBe('Item · Coffee');
   });
 });

@@ -128,6 +128,9 @@ importers:
       lucide-react:
         specifier: ^1.56.0
         version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
+      pptxgenjs:
+        specifier: ^4.0.1
+        version: 4.0.1
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -138,8 +141,8 @@ importers:
         specifier: ^7.18.4
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       turbothemes:
-        specifier: git+https://github.com/TurboNZL/turboengine.git#7dbbe2eb0f35850b83e2c83edae89ca9d144077e&path:/themes
-        version: https://codeload.github.com/TurboNZL/turboengine/tar.gz/7dbbe2eb0f35850b83e2c83edae89ca9d144077e#path:/themes
+        specifier: git+https://github.com/TurboNZL/turboengine.git#f45cd8091cecb5065c4047a28d7bfbc4c80979d9&path:/themes
+        version: https://codeload.github.com/TurboNZL/turboengine/tar.gz/f45cd8091cecb5065c4047a28d7bfbc4c80979d9#path:/themes
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
@@ -1601,6 +1604,14 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
+  https@1.0.0:
+    resolution: {integrity: sha512-4EC57ddXrkaF0x83Oj8sM6SLQHAWXw90Skqu2M4AEWENZ3F02dFJE/GARA8igO79tcgYqGrD7ae4f5L3um2lgg==}
+
+  image-size@1.2.1:
+    resolution: {integrity: sha512-rH+46sQJ2dlwfjfhCyNx5thzrv+dtmBIhPHk0zgRUukHzZ/kRueTJXoYYsclBaKcSMBWuGbOFXtioLpzTb5euw==}
+    engines: {node: '>=16.x'}
+    hasBin: true
+
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
@@ -2066,6 +2077,9 @@ packages:
     engines: {node: '>=14.0.0'}
     hasBin: true
 
+  pptxgenjs@4.0.1:
+    resolution: {integrity: sha512-TeJISr8wouAuXw4C1F/mC33xbZs/FuEG6nH9FG1Zj+nuPcGMP5YRHl6X+j3HSUnS1f3at6k75ZZXPMZlA5Lj9A==}
+
   proc-log@6.1.0:
     resolution: {integrity: sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ==}
     engines: {node: ^20.17.0 || >=22.9.0}
@@ -2135,6 +2149,9 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
+  queue@6.0.2:
+    resolution: {integrity: sha512-iHZWu+q3IdFZFX36ro/lKBkSvfkztY5Y7HMiPlOUjhupPcG2JMfst2KKEpu5XndviX/3UhFbRngUPNKtgvtZiA==}
 
   quick-lru@5.1.1:
     resolution: {integrity: sha512-WuyALRjWPDGtt/wzJiadO5AXY+8hZ80hVpe6MyivgraREW751X3SbhRvG3eLKOYN+8VEvqLcf3wdnt44Z4S4SA==}
@@ -2424,8 +2441,8 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/7dbbe2eb0f35850b83e2c83edae89ca9d144077e#path:/themes:
-    resolution: {path: /themes, tarball: https://codeload.github.com/TurboNZL/turboengine/tar.gz/7dbbe2eb0f35850b83e2c83edae89ca9d144077e}
+  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/f45cd8091cecb5065c4047a28d7bfbc4c80979d9#path:/themes:
+    resolution: {path: /themes, tarball: https://codeload.github.com/TurboNZL/turboengine/tar.gz/f45cd8091cecb5065c4047a28d7bfbc4c80979d9}
     version: 1.0.0
     engines: {node: '>=22.6'}
     hasBin: true
@@ -4161,6 +4178,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  https@1.0.0: {}
+
+  image-size@1.2.1:
+    dependencies:
+      queue: 6.0.2
+
   immediate@3.0.6: {}
 
   inflight@1.0.6:
@@ -4530,6 +4553,13 @@ snapshots:
       commander: 9.5.0
     optional: true
 
+  pptxgenjs@4.0.1:
+    dependencies:
+      '@types/node': 22.20.5
+      https: 1.0.0
+      image-size: 1.2.1
+      jszip: 3.10.2
+
   proc-log@6.1.0: {}
 
   process-nextick-args@2.0.1: {}
@@ -4633,6 +4663,10 @@ snapshots:
   pvutils@1.2.0: {}
 
   queue-microtask@1.2.3: {}
+
+  queue@6.0.2:
+    dependencies:
+      inherits: 2.0.4
 
   quick-lru@5.1.1: {}
 
@@ -4972,7 +5006,7 @@ snapshots:
 
   tslib@2.8.1: {}
 
-  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/7dbbe2eb0f35850b83e2c83edae89ca9d144077e#path:/themes: {}
+  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/f45cd8091cecb5065c4047a28d7bfbc4c80979d9#path:/themes: {}
 
   type-fest@0.13.1:
     optional: true

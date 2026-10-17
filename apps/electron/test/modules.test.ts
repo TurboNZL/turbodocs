@@ -21,11 +21,13 @@ describe('which module opens a file', () => {
 describe('installed modules', () => {
   const docs = MODULES.find((m) => m.id === 'docs')!;
   const sheets = MODULES.find((m) => m.id === 'sheets')!;
-  it('Docs is installed by default; a module without code can never be installed', () => {
+  it('every app is installed by default and can be removed; a module without code could never be installed', () => {
     expect(isInstalled(docs, {})).toBe(true);
     expect(isInstalled(docs, { docs: false })).toBe(false);
-    expect(sheets.available).toBe(false);
-    expect(isInstalled(sheets, { sheets: true })).toBe(false);
+    expect(sheets.available).toBe(true);
+    expect(isInstalled(sheets, {})).toBe(true);
+    expect(isInstalled(sheets, { sheets: false })).toBe(false);
+    expect(isInstalled({ ...sheets, available: false }, { sheets: true })).toBe(false);
   });
 });
 

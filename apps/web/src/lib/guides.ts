@@ -9,7 +9,7 @@ export interface Guide { name: string; title: string; group: 'Start' | 'Apps'; l
 
 const TITLE: Record<string, [string, Guide['group']]> = {
   GETTING_STARTED: ['Getting started', 'Start'], README: ['About TurboDocs', 'Start'],
-  APP_MODULES: ['App modules and file types', 'Apps'],
+  APP_MODULES: ['App modules and file types', 'Apps'], SHEETS: ['Sheets', 'Apps'], SLIDES: ['Slides', 'Apps'], SHORTCUTS: ['Shortcuts', 'Apps'],
 };
 const ORDER = Object.keys(TITLE);
 
