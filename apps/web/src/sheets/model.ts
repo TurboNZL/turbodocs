@@ -2,8 +2,11 @@
  * The spreadsheet in memory. Cells are sparse (`"row,col"`, both from 0). Values are what the file holds; `f` is a formula's text, kept so that a save writes it
  * back (TurboDocs does not calculate formulas yet: it shows the value the file last had).
  */
+/** one side of a cell's border: the line style and its colour */
+export interface Edge { st: 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double'; c: string }
+export interface Borders { t?: Edge; b?: Edge; l?: Edge; r?: Edge }
 export interface CellFmt {
-  b?: boolean; i?: boolean; u?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean;
+  b?: boolean; i?: boolean; u?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; /** vertical alignment (bottom is the spreadsheet default) */ va?: 'top' | 'middle' | 'bottom'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean; bd?: Borders;
 }
 export type CellValue = string | number | boolean | null;
 export interface Cell { v: CellValue; f?: string; /** an error value such as #DIV/0! (kept as text in `v`) */ err?: boolean; s?: CellFmt }
@@ -12,10 +15,15 @@ export interface Sheet {
   name: string; cells: Record<string, Cell>;
   /** column widths and row heights in px, only where they differ from the default */
   colW: Record<number, number>; rowH: Record<number, number>; merges: Range[];
+  /** frozen rows and columns: they stay in view while the rest scrolls (xlsx only) */
+  freeze?: { rows: number; cols: number };
 }
 export interface Workbook { sheets: Sheet[]; active: number; /** csv only */ delimiter?: string }
 
 export const DEFAULT_COL_W = 96, DEFAULT_ROW_H = 24, MIN_ROWS = 100, MIN_COLS = 26;
+
+/** a cell's text as it is edited: a formula as "=…", anything else as it would be typed */
+export const cellText = (cell: Cell | undefined): string => (cell?.f !== undefined ? `=${cell.f}` : cell?.v === null || cell?.v === undefined ? '' : typeof cell.v === 'boolean' ? (cell.v ? 'TRUE' : 'FALSE') : String(cell.v));
 
 export const key = (r: number, c: number) => `${r},${c}`;
 export const unkey = (k: string): [number, number] => { const i = k.indexOf(','); return [Number(k.slice(0, i)), Number(k.slice(i + 1))]; };

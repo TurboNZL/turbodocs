@@ -1,33 +1,39 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { colName, DEFAULT_COL_W, DEFAULT_ROW_H, isNumeric, key, type Cell, type Range, type Sheet } from './model.ts';
+import { cellText, colName, DEFAULT_COL_W, DEFAULT_ROW_H, isNumeric, key, type Cell, type Edge, type Range, type Sheet } from './model.ts';
 import { formatCell } from './format.ts';
 import { mergeAt } from './ops.ts';
 
 export interface Pos { r: number; c: number }
 export interface Sel { anchor: Pos; focus: Pos }
 export interface GridHandle { focus(): void; scrollTo(p: Pos): void }
+export interface ContextAt { x: number; y: number; kind: 'cell' | 'col' | 'row'; r: number; c: number }
+const EDGE_PX = { thin: 1, medium: 2, thick: 3, dashed: 1, dotted: 1, double: 3 } as const;
+const edgeCss = (e: Edge | undefined) => (e ? `${EDGE_PX[e.st]}px ${e.st === 'dashed' || e.st === 'dotted' || e.st === 'double' ? e.st : 'solid'} ${e.c}` : undefined);
 
 const HEAD_W = 46, HEAD_H = 24;
 /** the cell's text as it is edited: a formula as "=…", anything else as it would be typed */
-export const editText = (cell: Cell | undefined): string => (cell?.f !== undefined ? `=${cell.f}` : cell?.v === null || cell?.v === undefined ? '' : typeof cell.v === 'boolean' ? (cell.v ? 'TRUE' : 'FALSE') : String(cell.v));
+export const editText = cellText;
 
 interface Props {
   sheet: Sheet; rows: number; cols: number; zoom: number; sel: Sel; onSel(s: Sel): void;
   editing: { pos: Pos; text: string; typed: boolean } | null; setEditing(e: Props['editing']): void; onCommit(pos: Pos, text: string, move: 'down' | 'right' | 'up' | 'left' | null): void;
   onKey(e: React.KeyboardEvent): boolean; onResize(kind: 'col' | 'row', index: number, size: number): void; onFillHandle?(): void;
   onCopy(cut: boolean): string | null; onPaste(text: string): void; readOnly?: boolean;
+  /** the fill handle was dragged from `src` over `to` */ onFill?(src: Range, to: Range): void; onContext?(at: ContextAt): void;
+  /** cells found by Find (and the one the search is on), drawn tinted */ hits?: Set<string>; hitNow?: string | null;
 }
 
 /**
  * The grid: only the rows and columns in view are drawn, so a sheet of tens of thousands of rows scrolls smoothly. Click and drag select, the headers select
  * a whole column or row and their edges resize it. Keyboard and clipboard are handled by the container; typing starts editing the active cell.
  */
-export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste }, ref) {
+export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste, onFill, onContext, hits, hitNow }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 900, h: 500 });
   const colX = useMemo(() => { const a = [0]; for (let c = 0; c < cols; c++) a.push(a[c] + (sheet.colW[c] ?? DEFAULT_COL_W)); return a; }, [cols, sheet.colW]);
   const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (sheet.rowH[r] ?? DEFAULT_ROW_H)); return a; }, [rows, sheet.rowH]);
+  const fr = Math.min(sheet.freeze?.rows ?? 0, rows), fc = Math.min(sheet.freeze?.cols ?? 0, cols);
   const find = (arr: number[], v: number) => { let lo = 0, hi = arr.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; };
   useImperativeHandle(ref, () => ({
     focus: () => box.current?.focus({ preventScroll: true }),
@@ -35,10 +41,11 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
       const el = scroller.current; if (!el) return;
       const z = zoom / 100;
       const left = colX[p.c] * z, right = colX[p.c + 1] * z, top = rowY[p.r] * z, bottom = rowY[p.r + 1] * z;
-      if (left < el.scrollLeft) el.scrollLeft = left; else if (right + HEAD_W > el.scrollLeft + el.clientWidth) el.scrollLeft = right + HEAD_W - el.clientWidth;
-      if (top < el.scrollTop) el.scrollTop = top; else if (bottom + HEAD_H > el.scrollTop + el.clientHeight) el.scrollTop = bottom + HEAD_H - el.clientHeight;
+      const fw = colX[fc] * z, fh = rowY[fr] * z; // what the frozen panes cover
+      if (p.c >= fc) { if (left - fw < el.scrollLeft) el.scrollLeft = left - fw; else if (right + HEAD_W > el.scrollLeft + el.clientWidth) el.scrollLeft = right + HEAD_W - el.clientWidth; }
+      if (p.r >= fr) { if (top - fh < el.scrollTop) el.scrollTop = top - fh; else if (bottom + HEAD_H > el.scrollTop + el.clientHeight) el.scrollTop = bottom + HEAD_H - el.clientHeight; }
     },
-  }), [colX, rowY, zoom]);
+  }), [colX, rowY, zoom, fr, fc]);
   useLayoutEffect(() => {
     const el = scroller.current; if (!el) return;
     const read = () => setScroll({ x: el.scrollLeft, y: el.scrollTop, w: el.clientWidth, h: el.clientHeight });
@@ -57,7 +64,8 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
   const dragging = useRef<null | 'cells' | 'cols' | 'rows'>(null);
   const cellAt = (e: { clientX: number; clientY: number }): Pos => {
     const el = scroller.current!, b = el.getBoundingClientRect();
-    const x = (e.clientX - b.left + el.scrollLeft - HEAD_W * z) / z, y = (e.clientY - b.top + el.scrollTop - HEAD_H * z) / z;
+    const rx = e.clientX - b.left - HEAD_W * z, ry = e.clientY - b.top - HEAD_H * z; // frozen panes do not scroll
+    const x = (rx < colX[fc] * z ? rx : rx + el.scrollLeft) / z, y = (ry < rowY[fr] * z ? ry : ry + el.scrollTop) / z;
     return { r: Math.min(rows - 1, Math.max(0, find(rowY, y))), c: Math.min(cols - 1, Math.max(0, find(colX, x))) };
   };
   const down = (e: React.PointerEvent, kind: 'cells' | 'cols' | 'rows', p: Pos) => {
@@ -86,40 +94,113 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end);
   };
 
-  const cells: React.ReactNode[] = [];
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) {
-      const k = key(r, c);
-      if (covered.has(k)) continue;
-      const cell = sheet.cells[k];
-      const m = mergeAt(sheet, r, c);
-      const x = colX[c], y = rowY[r];
-      const w = m ? colX[m.c2 + 1] - x : colX[c + 1] - x, h = m ? rowY[m.r2 + 1] - y : rowY[r + 1] - y;
-      const s = cell?.s;
-      const pending = cell?.f !== undefined && (cell.v === null || cell.v === '');
-      const text = pending ? `=${cell!.f}` : formatCell(cell);
-      const numeric = cell && typeof cell.v === 'number' || (cell && typeof cell.v === 'string' && isNumeric(cell.v) && !cell.f);
-      const align = s?.align ?? (numeric ? 'right' : typeof cell?.v === 'boolean' ? 'center' : 'left');
-      const bg = s?.fill;
-      cells.push(
-        <div key={k} className="sheet-cell" data-r={r} data-c={c} style={{
-          left: x, top: y, width: w, height: h, textAlign: align, background: bg, color: s?.color ?? (cell?.err ? 'hsl(var(--bad))' : pending ? 'hsl(var(--muted))' : undefined),
-          fontWeight: s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: s?.u ? 'underline' : undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined,
-          whiteSpace: s?.wrap ? 'pre-wrap' : 'pre', overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis',
-        }} onPointerDown={(e) => down(e, 'cells', { r, c })} onDoubleClick={() => !editing && setEditing({ pos: { r, c }, text: editText(cell), typed: false })}>{text}</div>,
-      );
-    }
-  }
+  const renderCell = (r: number, c: number): React.ReactNode => {
+    const k = key(r, c);
+    if (covered.has(k)) return null;
+    const cell = sheet.cells[k];
+    const m = mergeAt(sheet, r, c);
+    const x = colX[c], y = rowY[r];
+    const w = m ? colX[m.c2 + 1] - x : colX[c + 1] - x, h = m ? rowY[m.r2 + 1] - y : rowY[r + 1] - y;
+    const s = cell?.s;
+    const pending = cell?.f !== undefined && (cell.v === null || cell.v === '');
+    const text = pending ? `=${cell!.f}` : formatCell(cell);
+    const numeric = cell && typeof cell.v === 'number' || (cell && typeof cell.v === 'string' && isNumeric(cell.v) && !cell.f);
+    const align = s?.align ?? (numeric ? 'right' : typeof cell?.v === 'boolean' ? 'center' : 'left');
+    const bd = s?.bd;
+    const va = s?.va;
+    const style: React.CSSProperties = {
+      left: x, top: y, width: w, height: h, textAlign: align, background: s?.fill, color: s?.color ?? (cell?.err ? 'hsl(var(--bad))' : pending ? 'hsl(var(--muted))' : undefined),
+      fontWeight: s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: s?.u ? 'underline' : undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined,
+      whiteSpace: s?.wrap ? 'pre-wrap' : 'pre', overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis',
+      ...(bd ? { borderTop: edgeCss(bd.t), borderLeft: edgeCss(bd.l), borderBottom: edgeCss(bd.b), borderRight: edgeCss(bd.r) } : {}),
+      ...(va ? { display: 'flex', flexDirection: 'column', justifyContent: va === 'top' ? 'flex-start' : va === 'middle' ? 'center' : 'flex-end', lineHeight: s?.wrap ? 1.25 : '23px' } : {}),
+    };
+    return (
+      <div key={k} className={`sheet-cell${hitNow === k ? ' sheet-hit-now' : hits?.has(k) ? ' sheet-hit' : ''}`} data-r={r} data-c={c} style={style}
+        onPointerDown={(e) => down(e, 'cells', { r, c })} onContextMenu={(e) => context(e, 'cell', r, c)} onDoubleClick={() => !editing && setEditing({ pos: { r, c }, text: editText(cell), typed: false })}>{va ? <span style={{ overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis' }}>{text}</span> : text}</div>
+    );
+  };
+  /** the cells of a block of rows and columns, drawn in one layer */
+  const block = (ra: number, rb: number, ca: number, cb: number) => { const out: React.ReactNode[] = []; for (let r = ra; r <= rb; r++) for (let c = ca; c <= cb; c++) out.push(renderCell(r, c)); return out; };
+  const context = (e: React.MouseEvent, kind: ContextAt['kind'], r: number, c: number) => {
+    if (!onContext) return;
+    e.preventDefault();
+    if (editing) onCommit(editing.pos, editing.text, null);
+    box.current?.focus({ preventScroll: true });
+    const inside = r >= range.r1 && r <= range.r2 && c >= range.c1 && c <= range.c2;
+    if (kind === 'col') { if (!(c >= range.c1 && c <= range.c2 && range.r1 === 0 && range.r2 === rows - 1)) onSel({ anchor: { r: 0, c }, focus: { r: rows - 1, c } }); }
+    else if (kind === 'row') { if (!(r >= range.r1 && r <= range.r2 && range.c1 === 0 && range.c2 === cols - 1)) onSel({ anchor: { r, c: 0 }, focus: { r, c: cols - 1 } }); }
+    else if (!inside) onSel({ anchor: { r, c }, focus: { r, c } });
+    onContext({ x: e.clientX, y: e.clientY, kind, r, c });
+  };
   const heads: React.ReactNode[] = [];
-  for (let c = c0; c <= c1; c++) heads.push(<div key={`h${c}`} className={`sheet-head ${c >= range.c1 && c <= range.c2 ? 'on' : ''}`} style={{ left: colX[c], width: colX[c + 1] - colX[c], height: HEAD_H }} onPointerDown={(e) => down(e, 'cols', { r: 0, c })}>{colName(c)}<span className="sheet-grip-x" onPointerDown={(e) => startResize(e, 'col', c)} /></div>);
+  const mkHead = (c: number) => <div key={`h${c}`} className={`sheet-head ${c >= range.c1 && c <= range.c2 ? 'on' : ''}`} style={{ left: colX[c], width: colX[c + 1] - colX[c], height: HEAD_H }} onPointerDown={(e) => down(e, 'cols', { r: 0, c })} onContextMenu={(e) => context(e, 'col', 0, c)}>{colName(c)}<span className="sheet-grip-x" onPointerDown={(e) => startResize(e, 'col', c)} /></div>;
+  const mkRowHead = (r: number) => <div key={`r${r}`} className={`sheet-head ${r >= range.r1 && r <= range.r2 ? 'on' : ''}`} style={{ top: rowY[r], height: rowY[r + 1] - rowY[r], width: HEAD_W }} onPointerDown={(e) => down(e, 'rows', { r, c: 0 })} onContextMenu={(e) => context(e, 'row', r, 0)}>{r + 1}<span className="sheet-grip-y" onPointerDown={(e) => startResize(e, 'row', r)} /></div>;
+  for (let c = c0; c <= c1; c++) heads.push(mkHead(c));
   const rheads: React.ReactNode[] = [];
-  for (let r = r0; r <= r1; r++) rheads.push(<div key={`r${r}`} className={`sheet-head ${r >= range.r1 && r <= range.r2 ? 'on' : ''}`} style={{ top: rowY[r], height: rowY[r + 1] - rowY[r], width: HEAD_W }} onPointerDown={(e) => down(e, 'rows', { r, c: 0 })}>{r + 1}<span className="sheet-grip-y" onPointerDown={(e) => startResize(e, 'row', r)} /></div>);
+  for (let r = r0; r <= r1; r++) rheads.push(mkRowHead(r));
+  const pinnedHeads = Array.from({ length: fc }, (_, c) => mkHead(c)), pinnedRowHeads = Array.from({ length: fr }, (_, r) => mkRowHead(r));
 
   const active = sel.focus.r === sel.anchor.r && sel.focus.c === sel.anchor.c ? sel.focus : sel.anchor;
   const am = mergeAt(sheet, active.r, active.c);
   const activeRect = rect(am ?? { r1: active.r, c1: active.c, r2: active.r, c2: active.c });
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (editing) { const el = input.current; if (el) { el.focus(); if (editing.typed) el.setSelectionRange(el.value.length, el.value.length); else el.select(); } } }, [editing?.pos.r, editing?.pos.c]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- the fill handle: drag the corner of the selection to extend it
+  const [fillTo, setFillTo] = useState<Range | null>(null);
+  const startFill = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !onFill) return;
+    e.stopPropagation(); e.preventDefault();
+    const src = range;
+    const target = (m: { clientX: number; clientY: number }): Range => {
+      const p = cellAt(m);
+      const dr = p.r > src.r2 ? p.r - src.r2 : p.r < src.r1 ? p.r - src.r1 : 0, dc = p.c > src.c2 ? p.c - src.c2 : p.c < src.c1 ? p.c - src.c1 : 0;
+      if (dr === 0 && dc === 0) return src;
+      return Math.abs(dr) >= Math.abs(dc) ? { ...src, r1: Math.min(src.r1, p.r), r2: Math.max(src.r2, p.r) } : { ...src, c1: Math.min(src.c1, p.c), c2: Math.max(src.c2, p.c) };
+    };
+    let last = src;
+    const mv = (m: PointerEvent) => { last = target(m); setFillTo(last); };
+    const end = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', end); setFillTo(null); if (last !== src) onFill(src, last); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end);
+  };
+  const handlePos = { left: colX[range.c2 + 1] - 4, top: rowY[range.r2 + 1] - 4 };
+  /** selection, the fill handle and (when it is in this layer) the cell editor */
+  const marks = (layer: 'main' | 'top' | 'left' | 'corner') => {
+    const regionOf = (r: number, c: number) => (r < fr ? (c < fc ? 'corner' : 'top') : c < fc ? 'left' : 'main');
+    const edit = editing && regionOf(editing.pos.r, editing.pos.c) === layer ? editing : null;
+    return (
+      <>
+        <div className="sheet-range" style={rect(range)} />
+        <div className="sheet-active" style={activeRect} />
+        {fillTo && layer === 'main' && <div className="sheet-fillto" style={rect(fillTo)} />}
+        {onFill && regionOf(range.r2, range.c2) === layer && <div className="sheet-fill" aria-label="Fill handle" style={handlePos} onPointerDown={startFill} />}
+        {edit && (() => { const g = rect(mergeAt(sheet, edit.pos.r, edit.pos.c) ?? { r1: edit.pos.r, c1: edit.pos.c, r2: edit.pos.r, c2: edit.pos.c }); return (
+          <textarea ref={input} aria-label="Cell" className="sheet-edit" style={{ left: g.left, top: g.top, minWidth: g.width, minHeight: g.height }} rows={1} value={edit.text}
+            onChange={(e) => setEditing({ ...edit, text: e.target.value })}
+            onBlur={() => onCommit(edit.pos, edit.text, null)}
+            onKeyDown={(e) => {
+              const done = (m: 'down' | 'right' | 'up' | 'left' | null) => { e.preventDefault(); e.stopPropagation(); onCommit(edit.pos, edit.text, m); };
+              if (e.key === 'Enter' && !e.altKey) done(e.shiftKey ? 'up' : 'down');
+              else if (e.key === 'Tab') done(e.shiftKey ? 'left' : 'right');
+              else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null); box.current?.focus({ preventScroll: true }); }
+              else if (e.key === 'Enter' && e.altKey) { e.preventDefault(); setEditing({ ...edit, text: `${edit.text}\n` }); }
+              else if (edit.typed && e.key === 'ArrowDown') done('down'); else if (edit.typed && e.key === 'ArrowUp') done('up');
+              else if (edit.typed && e.key === 'ArrowRight' && e.currentTarget.selectionStart === edit.text.length) done('right');
+              else if (edit.typed && e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) done('left');
+            }} />
+        ); })()}
+      </>
+    );
+  };
+  const fw = colX[fc] * z, fh = rowY[fr] * z;
+  const layer = (style: React.CSSProperties, moveX: boolean, moveY: boolean, w: number, h: number, children: React.ReactNode, name: string) => (
+    <div className={`sheet-frozen sheet-frozen-${name}`} style={style}>
+      <div style={{ transform: `translate(${moveX ? -scroll.x : 0}px, ${moveY ? -scroll.y : 0}px)` }}>
+        <div className="sheet-body" style={{ zoom: z, width: w, height: h }}>{children}</div>
+      </div>
+    </div>
+  );
 
   return (
     <div ref={box} tabIndex={0} role="grid" aria-label="Spreadsheet" aria-rowcount={rows} aria-colcount={cols} className="sheet-wrap"
@@ -132,31 +213,24 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
         <div style={{ width: colX[cols] * z + HEAD_W, height: rowY[rows] * z + HEAD_H, position: 'relative' }}>
           <div style={{ position: 'absolute', left: HEAD_W, top: HEAD_H }}>
             <div className="sheet-body" style={{ zoom: z, width: colX[cols], height: rowY[rows] }}>
-              {cells}
-              <div className="sheet-range" style={rect(range)} />
-              <div className="sheet-active" style={activeRect} />
-              {editing && (() => { const g = rect(mergeAt(sheet, editing.pos.r, editing.pos.c) ?? { r1: editing.pos.r, c1: editing.pos.c, r2: editing.pos.r, c2: editing.pos.c }); return (
-                <textarea ref={input} aria-label="Cell" className="sheet-edit" style={{ left: g.left, top: g.top, minWidth: g.width, minHeight: g.height }} rows={1} value={editing.text}
-                  onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-                  onBlur={() => onCommit(editing.pos, editing.text, null)}
-                  onKeyDown={(e) => {
-                    const done = (m: 'down' | 'right' | 'up' | 'left' | null) => { e.preventDefault(); e.stopPropagation(); onCommit(editing.pos, editing.text, m); };
-                    if (e.key === 'Enter' && !e.altKey) done(e.shiftKey ? 'up' : 'down');
-                    else if (e.key === 'Tab') done(e.shiftKey ? 'left' : 'right');
-                    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null); box.current?.focus({ preventScroll: true }); }
-                    else if (e.key === 'Enter' && e.altKey) { e.preventDefault(); setEditing({ ...editing, text: `${editing.text}\n` }); }
-                    else if (editing.typed && e.key === 'ArrowDown') done('down'); else if (editing.typed && e.key === 'ArrowUp') done('up');
-                    else if (editing.typed && e.key === 'ArrowRight' && e.currentTarget.selectionStart === editing.text.length) done('right');
-                    else if (editing.typed && e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) done('left');
-                  }} />
-              ); })()}
+              {block(Math.max(r0, fr), r1, Math.max(c0, fc), c1)}
+              {marks('main')}
             </div>
           </div>
         </div>
       </div>
+      {fr > 0 && layer({ left: HEAD_W, top: HEAD_H, width: Math.max(0, scroll.w - HEAD_W), height: fh }, true, false, colX[cols], rowY[fr], <>{block(0, fr - 1, Math.max(c0, fc), c1)}{marks('top')}</>, 'top')}
+      {fc > 0 && layer({ left: HEAD_W, top: HEAD_H, width: fw, height: Math.max(0, scroll.h - HEAD_H) }, false, true, colX[fc], rowY[rows], <>{block(Math.max(r0, fr), r1, 0, fc - 1)}{marks('left')}</>, 'left')}
+      {fr > 0 && fc > 0 && layer({ left: HEAD_W, top: HEAD_H, width: fw, height: fh }, false, false, colX[fc], rowY[fr], <>{block(0, fr - 1, 0, fc - 1)}{marks('corner')}</>, 'corner')}
       <div className="sheet-corner" style={{ width: HEAD_W, height: HEAD_H }} onPointerDown={() => onSel({ anchor: { r: 0, c: 0 }, focus: { r: rows - 1, c: cols - 1 } })} />
-      <div className="sheet-colheads" style={{ left: HEAD_W, width: Math.max(0, scroll.w - HEAD_W), height: HEAD_H }}><div style={{ transform: `translateX(${-scroll.x}px)` }}><div style={{ zoom: z, position: 'relative', height: HEAD_H }}>{heads}</div></div></div>
-      <div className="sheet-rowheads" style={{ top: HEAD_H, height: Math.max(0, scroll.h - HEAD_H), width: HEAD_W }}><div style={{ transform: `translateY(${-scroll.y}px)` }}><div style={{ zoom: z, position: 'relative', width: HEAD_W }}>{rheads}</div></div></div>
+      <div className="sheet-colheads" style={{ left: HEAD_W, width: Math.max(0, scroll.w - HEAD_W), height: HEAD_H }}>
+        <div style={{ transform: `translateX(${-scroll.x}px)` }}><div style={{ zoom: z, position: 'relative', height: HEAD_H }}>{heads}</div></div>
+        {fc > 0 && <div className="sheet-pinned" style={{ left: 0, top: 0, width: fw, height: HEAD_H }}><div style={{ zoom: z, position: 'relative', height: HEAD_H }}>{pinnedHeads}</div></div>}
+      </div>
+      <div className="sheet-rowheads" style={{ top: HEAD_H, height: Math.max(0, scroll.h - HEAD_H), width: HEAD_W }}>
+        <div style={{ transform: `translateY(${-scroll.y}px)` }}><div style={{ zoom: z, position: 'relative', width: HEAD_W }}>{rheads}</div></div>
+        {fr > 0 && <div className="sheet-pinned" style={{ left: 0, top: 0, width: HEAD_W, height: fh }}><div style={{ zoom: z, position: 'relative', width: HEAD_W }}>{pinnedRowHeads}</div></div>}
+      </div>
     </div>
   );
 });

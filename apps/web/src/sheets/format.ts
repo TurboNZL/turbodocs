@@ -103,3 +103,16 @@ export const NUMBER_FORMATS: { label: string; code: string | null }[] = [
   { label: 'Automatic', code: null }, { label: 'Number  1,000.00', code: '#,##0.00' }, { label: 'Integer  1,000', code: '#,##0' }, { label: 'Percent  10%', code: '0%' },
   { label: 'Currency  $1,000.00', code: '"$"#,##0.00' }, { label: 'Date  2026-10-17', code: 'yyyy-mm-dd' }, { label: 'Date  17 Oct 2026', code: 'd mmm yyyy' }, { label: 'Time  14:30', code: 'h:mm' }, { label: 'Scientific  1.00E+03', code: '0.00E+00' }, { label: 'Text', code: '@' },
 ];
+
+/** One more or one fewer decimal place in a number format ("#,##0.00" -> "#,##0.0"); General becomes "0" first; dates and text are left alone. */
+export function changeDecimals(nf: string | null | undefined, delta: number): string | null {
+  const code = !nf || /^general$/i.test(nf) ? '0' : nf;
+  if (isDateCode(code) || code === '@') return nf ?? null;
+  return code.split(';').map((sec) => {
+    let done = false;
+    return sec.split('"').map((seg, i) => {
+      if (i % 2 === 1 || done) return seg;
+      return seg.replace(/([#0][#0,]*)(?:\.(0*))?/, (_m, int: string, frac?: string) => { done = true; const n = Math.max(0, (frac?.length ?? 0) + delta); return `${int}${n ? `.${'0'.repeat(n)}` : ''}`; });
+    }).join('"');
+  }).join(';');
+}

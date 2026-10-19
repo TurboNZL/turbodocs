@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 export type MenuItem = { sep: true } | { label: string; keys?: string; run?: () => void; disabled?: boolean; check?: boolean; sub?: MenuItem[] };
 export interface MenuDef { label: string; items: MenuItem[] }
 
-function Items({ items, close }: { items: MenuItem[]; close: () => void }) {
+export function Items({ items, close }: { items: MenuItem[]; close: () => void }) {
   const [openSub, setOpenSub] = useState<number | null>(null);
   return (
     <>

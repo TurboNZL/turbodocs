@@ -1,4 +1,5 @@
-import { isNumeric, key, numberOf, unkey, type Cell, type CellFmt, type CellValue, type Range, type Sheet } from './model.ts';
+import { isNumeric, key, numberOf, unkey, type Borders, type Cell, type CellFmt, type CellValue, type Edge, type Range, type Sheet } from './model.ts';
+import { isDateCode } from './format.ts';
 
 /** Pure edits of a sheet: each returns a new sheet and leaves the old one alone (that is what undo keeps). */
 const copy = (s: Sheet): Sheet => ({ ...s, cells: { ...s.cells }, colW: { ...s.colW }, rowH: { ...s.rowH }, merges: s.merges.map((m) => ({ ...m })) });
@@ -150,3 +151,62 @@ export const stats = (s: Sheet, g: Range): { count: number; sum: number; avg: nu
   each(g, (r, c) => { const v = s.cells[key(r, c)]?.v; if (v === null || v === undefined || typeof v === 'boolean' || !isNumeric(v)) return; const n = numberOf(v)!; count++; sum += n; min = Math.min(min, n); max = Math.max(max, n); });
   return count ? { count, sum, avg: sum / count, min, max } : null;
 };
+
+export type BorderMode = 'all' | 'outer' | 'inner' | 'top' | 'bottom' | 'left' | 'right' | 'none';
+/** Borders on a range: each cell keeps its own edges (as in the file); `none` clears every edge of the range. */
+export function setBorders(s: Sheet, g: Range, mode: BorderMode, edge: Edge): Sheet {
+  const o = copy(s);
+  each(g, (r, c) => {
+    const k = key(r, c), cell = o.cells[k] ?? { v: null };
+    const sides: (keyof Borders)[] = [];
+    const top = r === g.r1, bottom = r === g.r2, left = c === g.c1, right = c === g.c2;
+    if (mode === 'all') sides.push('t', 'b', 'l', 'r');
+    else if (mode === 'outer') { if (top) sides.push('t'); if (bottom) sides.push('b'); if (left) sides.push('l'); if (right) sides.push('r'); }
+    else if (mode === 'inner') { if (!top) sides.push('t'); if (!bottom) sides.push('b'); if (!left) sides.push('l'); if (!right) sides.push('r'); }
+    else if (mode === 'top' && top) sides.push('t'); else if (mode === 'bottom' && bottom) sides.push('b'); else if (mode === 'left' && left) sides.push('l'); else if (mode === 'right' && right) sides.push('r');
+    let bd: Borders | undefined = cell.s?.bd;
+    if (mode === 'none') bd = undefined;
+    else if (sides.length) { bd = { ...bd }; for (const side of sides) bd[side] = { ...edge }; }
+    if (bd === cell.s?.bd) return;
+    const fmt: CellFmt = { ...cell.s }; if (bd) fmt.bd = bd; else delete fmt.bd;
+    const next: Cell = { ...cell, ...(Object.keys(fmt).length ? { s: fmt } : {}) }; if (!Object.keys(fmt).length) delete next.s;
+    if (next.v === null && !next.s && next.f === undefined) delete o.cells[k]; else o.cells[k] = next;
+  });
+  return o;
+}
+
+/**
+ * The fill handle: extend `src` over `to` (a range that contains it and grows in one direction). Numbers that step evenly go on stepping, a date goes on a day at a time,
+ * text ending in a number counts up ("Item 1", "Item 2"), anything else repeats. Formulas are copied as they are (nothing is calculated here).
+ */
+export function autofill(s: Sheet, src: Range, to: Range): Sheet {
+  const down = to.r2 > src.r2, up = to.r1 < src.r1, right = to.c2 > src.c2, left = to.c1 < src.c1;
+  const vertical = down || up;
+  if (!vertical && !right && !left) return s;
+  const o = copy(s);
+  const lines = vertical ? src.c2 - src.c1 + 1 : src.r2 - src.r1 + 1, len = vertical ? src.r2 - src.r1 + 1 : src.c2 - src.c1 + 1;
+  const forward = down || right;
+  const total = vertical ? (down ? to.r2 - src.r2 : src.r1 - to.r1) : (right ? to.c2 - src.c2 : src.c1 - to.c1);
+  for (let l = 0; l < lines; l++) {
+    const at = (i: number) => (vertical ? key(src.r1 + i, src.c1 + l) : key(src.r1 + l, src.c1 + i)); // i is an index into the source line
+    const cells = Array.from({ length: len }, (_, i) => s.cells[at(i)]);
+    const nums = cells.map((c) => (c && c.f === undefined && typeof c.v === 'number' ? c.v : null));
+    const allNum = nums.every((n) => n !== null);
+    const step = allNum ? (len > 1 ? (nums[len - 1]! - nums[0]!) / (len - 1) : cells[0]?.s?.nf && isDateCode(cells[0].s.nf) ? 1 : 0) : 0;
+    const even = allNum && nums.every((n, i) => i === 0 || Math.abs(n! - nums[i - 1]! - step) < 1e-9);
+    const tails = cells.map((c) => (c && c.f === undefined && typeof c.v === 'string' ? /^(.*?)(\d+)$/.exec(c.v) : null));
+    const textSeries = tails.every((m) => m) && tails.every((m) => m![1] === tails[0]![1]) && (len === 1 || tails.every((m, i) => i === 0 || Number(m![2]) - Number(tails[i - 1]![2]) === Number(tails[1]![2]) - Number(tails[0]![2])));
+    const tstep = textSeries ? (len > 1 ? Number(tails[1]![2]) - Number(tails[0]![2]) : 1) : 0;
+    for (let k = 1; k <= total; k++) {
+      const dst = vertical ? key(down ? src.r2 + k : src.r1 - k, src.c1 + l) : key(src.r1 + l, right ? src.c2 + k : src.c1 - k);
+      const i = forward ? (k - 1) % len : (len - 1 - ((k - 1) % len)); // the source cell this one copies the look of
+      const base = cells[i];
+      if (!base) { delete o.cells[dst]; continue; }
+      let cell: Cell = { ...base };
+      if (even && step !== 0) cell = { ...base, v: forward ? nums[len - 1]! + step * k : nums[0]! - step * k };
+      else if (textSeries && tstep !== 0) { const m = tails[forward ? len - 1 : 0]!; const n = Number(m[2]) + (forward ? tstep * k : -tstep * k); const w = m[2].length; cell = { ...base, v: `${m[1]}${n < 0 ? Math.abs(n) : String(n).padStart(m[2].startsWith('0') ? w : 0, '0')}` }; }
+      o.cells[dst] = cell;
+    }
+  }
+  return o;
+}
