@@ -17,7 +17,14 @@ export interface Sheet {
   colW: Record<number, number>; rowH: Record<number, number>; merges: Range[];
   /** frozen rows and columns: they stay in view while the rest scrolls (xlsx only) */
   freeze?: { rows: number; cols: number };
+  charts?: Chart[];
 }
+export type ChartType = 'column' | 'bar' | 'line' | 'pie';
+/**
+ * A chart floating over a sheet. Its data is a block of cells (`range`): with `header` the first row names the series, with `labels` the first column names the
+ * categories, every other column is a series. `x y w h` are px on the sheet (like the grid itself, not the window).
+ */
+export interface Chart { id: string; type: ChartType; title: string; range: Range; header: boolean; labels: boolean; x: number; y: number; w: number; h: number }
 export interface Workbook { sheets: Sheet[]; active: number; /** csv only */ delimiter?: string }
 
 export const DEFAULT_COL_W = 96, DEFAULT_ROW_H = 24, MIN_ROWS = 100, MIN_COLS = 26;
@@ -64,3 +71,13 @@ export function parseInput(text: string, typed: boolean): CellValue {
 }
 export const isNumeric = (v: CellValue): boolean => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(v.trim()));
 export const numberOf = (v: CellValue): number | null => (typeof v === 'number' ? v : isNumeric(v) ? Number((v as string).trim()) : null);
+
+/** where a column starts and a row starts on the sheet, in px */
+export const colLeft = (s: Sheet, c: number): number => { let x = 0; for (let i = 0; i < c; i++) x += s.colW[i] ?? DEFAULT_COL_W; return x; };
+export const rowTop = (s: Sheet, r: number): number => { let y = 0; for (let i = 0; i < r; i++) y += s.rowH[i] ?? DEFAULT_ROW_H; return y; };
+/** the column and row at a px position, with how far into it (the inverse of `colLeft` and `rowTop`) */
+export function cellAtPx(s: Sheet, x: number, y: number): { r: number; c: number; dx: number; dy: number } {
+  let c = 0, left = 0, w = s.colW[0] ?? DEFAULT_COL_W; while (left + w <= x && c < 16383) { left += w; c++; w = s.colW[c] ?? DEFAULT_COL_W; }
+  let r = 0, top = 0, h = s.rowH[0] ?? DEFAULT_ROW_H; while (top + h <= y && r < 1048575) { top += h; r++; h = s.rowH[r] ?? DEFAULT_ROW_H; }
+  return { r, c, dx: Math.max(0, x - left), dy: Math.max(0, y - top) };
+}

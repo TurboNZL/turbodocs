@@ -84,3 +84,59 @@ describe('find and replace', () => {
     expect(findAll(grid([['a.b', 'axb']]), 'a.b', { matchCase: false, wholeCell: true })).toEqual([{ r: 0, c: 0 }]);
   });
 });
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { chartData, currentRegion, guessHeaders, niceAxis, shiftCharts } from '../src/sheets/charts.ts';
+import { deleteCols, deleteRows, insertRows } from '../src/sheets/ops.ts';
+import type { Chart } from '../src/sheets/model.ts';
+
+const chart = (over: Partial<Chart> = {}): Chart => ({ id: 'c1', type: 'column', title: 'T', range: { r1: 0, c1: 0, r2: 3, c2: 2 }, header: true, labels: true, x: 300, y: 40, w: 480, h: 300, ...over });
+const sales = grid([['Month', 'North', 'South'], ['Jan', 10, 7], ['Feb', 14, 'n/a'], ['Mar', 9, 12]]);
+
+describe('charts', () => {
+  it('read their numbers from the cells', () => {
+    expect(chartData(sales, chart())).toEqual({ cats: ['Jan', 'Feb', 'Mar'], series: [{ name: 'North', values: [10, 14, 9] }, { name: 'South', values: [7, null, 12] }] });
+    expect(chartData(sales, chart({ header: false, labels: false })).series[0]).toEqual({ name: 'Series 1', values: [null, null, null, null] });
+    expect(chartData(sales, chart({ range: { r1: 1, c1: 1, r2: 3, c2: 1 }, header: false, labels: false }))).toEqual({ cats: ['1', '2', '3'], series: [{ name: 'Series 1', values: [10, 14, 9] }] });
+  });
+  it('guess what is a header and what is a label, and find the block around a cell', () => {
+    expect(guessHeaders(sales, { r1: 0, c1: 0, r2: 3, c2: 2 })).toEqual({ header: true, labels: true });
+    expect(guessHeaders(grid([[1, 2], [3, 4]]), { r1: 0, c1: 0, r2: 1, c2: 1 })).toEqual({ header: false, labels: false });
+    expect(currentRegion(sales, { r: 2, c: 1 })).toEqual({ r1: 0, c1: 0, r2: 3, c2: 2 });
+    expect(currentRegion(sales, { r: 9, c: 9 })).toEqual({ r1: 9, c1: 9, r2: 9, c2: 9 });
+  });
+  it('have tidy axes', () => {
+    expect(niceAxis(0, 18)).toMatchObject({ lo: 0, hi: 20, step: 5 }); expect(niceAxis(-3, 7).ticks).toEqual([-4, -2, 0, 2, 4, 6, 8]); expect(niceAxis(0, 0).hi).toBeGreaterThan(0);
+  });
+  it('follow inserted and deleted rows and columns', () => {
+    const s = { ...sales, charts: [chart()] };
+    expect(insertRows(s, 2).charts![0].range).toEqual({ r1: 0, c1: 0, r2: 4, c2: 2 });
+    expect(insertRows(s, 0).charts![0].range).toEqual({ r1: 1, c1: 0, r2: 4, c2: 2 });
+    expect(deleteRows(s, 1, 1).charts![0].range).toEqual({ r1: 0, c1: 0, r2: 2, c2: 2 });
+    expect(deleteCols(s, 2, 2).charts![0].range).toEqual({ r1: 0, c1: 0, r2: 3, c2: 1 });
+    expect(deleteCols(s, 0, 2).charts).toEqual([]);
+    expect(shiftCharts(undefined, 'r', { insert: { at: 0, n: 1 } })).toBeUndefined();
+  });
+  it('survive a save: all four kinds, with their title, range and place', async () => {
+    const kinds: Chart[] = (['column', 'bar', 'line', 'pie'] as const).map((type, i) => chart({ id: `k${i}`, type, title: `A "${type}" <chart> & more`, x: 300 + i * 20, y: 40 + i * 330 }));
+    const again = (await importXlsx(await exportXlsx({ sheets: [{ ...sales, name: "Q1 'sales'", charts: kinds }, { ...emptySheet('Other') }], active: 0 }))).book;
+    expect(again.sheets[1].charts).toBeUndefined();
+    const got = again.sheets[0].charts!;
+    expect(got.map((c) => [c.type, c.title, c.header, c.labels])).toEqual(kinds.map((c) => [c.type, c.title, true, true]));
+    expect(got[0].range).toEqual({ r1: 0, c1: 0, r2: 3, c2: 2 });
+    expect(got[2]).toMatchObject({ x: 340, y: 700, w: 480, h: 300 });
+    // an unlabelled one with no header
+    const bare = (await importXlsx(await exportXlsx({ sheets: [{ ...sales, charts: [chart({ range: { r1: 1, c1: 1, r2: 3, c2: 2 }, header: false, labels: false })] }], active: 0 }))).book.sheets[0].charts![0];
+    expect(bare).toMatchObject({ header: false, labels: false, range: { r1: 1, c1: 1, r2: 3, c2: 2 } });
+  });
+  it('are read from a workbook written by openpyxl', async () => {
+    const { book, warnings } = await importXlsx(new Uint8Array(readFileSync(join(import.meta.dirname, 'fixtures', 'openpyxl-charts.xlsx'))));
+    expect(warnings).toEqual([]);
+    const cs = book.sheets[0].charts!;
+    expect(cs.map((c) => [c.type, c.title, c.header, c.labels])).toEqual([['column', 'Sales by month', true, true], ['pie', 'Share', true, true], ['line', '', false, false]]);
+    expect(cs[0].range).toEqual({ r1: 0, c1: 0, r2: 4, c2: 2 }); expect(cs[2].range).toEqual({ r1: 1, c1: 2, r2: 4, c2: 2 });
+    expect(cs[0].x).toBeGreaterThan(300); expect(cs[0].w).toBeGreaterThan(300);
+    expect(chartData(book.sheets[0], cs[0]).series.map((s) => s.values)).toEqual([[10, 14, 9, 18], [7, 9, 12, 15]]);
+  });
+});

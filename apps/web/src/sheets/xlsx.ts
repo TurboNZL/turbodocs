@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { builtinFormat } from './format.ts';
+import { buildChartParts, readCharts } from './xlsxCharts.ts';
 import { colIndex, colName, emptySheet, key, parseAddr, parseRange, rangeText, unkey, type Borders, type Cell, type CellFmt, type Edge, type Sheet, type Workbook } from './model.ts';
 
 /**
@@ -127,7 +128,7 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
     if (kid(ws, 'conditionalFormatting')) warnings.add('Conditional formatting.');
     if (kid(ws, 'dataValidations')) warnings.add('Data validation lists.');
     if (kid(ws, 'hyperlinks')) warnings.add('Hyperlinks (the text is kept, not the link).');
-    if (kid(ws, 'drawing') || kid(ws, 'legacyDrawing')) warnings.add('Charts, pictures and comments.');
+    await readCharts(zip, path, ws, sheet, warnings);
     if (kid(ws, 'tableParts')) warnings.add('Excel tables (the cells are kept, not the table).');
     const pane = kid(kid(kid(ws, 'sheetViews'), 'sheetView'), 'pane');
     if (pane && ['frozen', 'frozenSplit'].includes(pane.getAttribute('state') ?? '')) { const fc = Math.round(Number(pane.getAttribute('xSplit') ?? 0)), fr = Math.round(Number(pane.getAttribute('ySplit') ?? 0)); if (fc > 0 || fr > 0) sheet.freeze = { rows: fr, cols: fc }; }
@@ -135,7 +136,7 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
   }
   const names = Object.keys(zip.files);
   if (names.some((n) => /^xl\/pivotTables\//.test(n))) warnings.add('Pivot tables.');
-  if (names.some((n) => /^xl\/(charts|media)\//.test(n))) warnings.add('Charts and pictures.');
+
   if (names.some((n) => /vbaProject\.bin$/.test(n))) warnings.add('Macros.');
   const act = Number(kid(kid(wb, 'bookViews'), 'workbookView')?.getAttribute('activeTab') ?? 0);
   book.active = act >= 0 && act < book.sheets.length ? act : 0;
@@ -192,7 +193,7 @@ export async function exportXlsx(book: Workbook): Promise<Uint8Array> {
     const active = fr > 0 && fc > 0 ? 'bottomRight' : fr > 0 ? 'bottomLeft' : 'topRight';
     return `<pane${fc > 0 ? ` xSplit="${fc}"` : ''}${fr > 0 ? ` ySplit="${fr}"` : ''} topLeftCell="${colName(fc)}${fr + 1}" activePane="${active}" state="frozen"/><selection pane="${active}"/>`;
   };
-  const sheetXml = (sh: Sheet, selected: boolean): string => {
+  const sheetXml = (sh: Sheet, selected: boolean, drawing = false): string => {
     const rows = new Map<number, [number, Cell][]>();
     for (const [k, cell] of Object.entries(sh.cells)) { const [r, c] = unkey(k); if (!rows.has(r)) rows.set(r, []); rows.get(r)!.push([c, cell]); }
     for (const r of Object.keys(sh.rowH)) if (!rows.has(Number(r))) rows.set(Number(r), []);
@@ -213,13 +214,15 @@ export async function exportXlsx(book: Workbook): Promise<Uint8Array> {
     }).join('');
     const cols = Object.entries(sh.colW).sort((a, b) => Number(a[0]) - Number(b[0])).map(([c, w]) => `<col min="${Number(c) + 1}" max="${Number(c) + 1}" width="${Math.max(1, (w - 5) / 7).toFixed(2)}" customWidth="1"/>`).join('');
     const merges = sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map((m) => `<mergeCell ref="${rangeText(m)}"/>`).join('')}</mergeCells>` : '';
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS.main}" xmlns:r="${NS.rel}"><sheetViews><sheetView workbookViewId="0"${selected ? ' tabSelected="1"' : ''}>${paneXml(sh)}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData>${merges}</worksheet>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS.main}" xmlns:r="${NS.rel}"><sheetViews><sheetView workbookViewId="0"${selected ? ' tabSelected="1"' : ''}>${paneXml(sh)}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData>${merges}${drawing ? '<drawing r:id="rId1"/>' : ''}</worksheet>`;
   };
 
   const zip = new JSZip();
   const sheets = book.sheets.length ? book.sheets : [emptySheet('Sheet1')];
-  sheets.forEach((sh, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sh, i === book.active)));
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>`);
+  const chartParts = buildChartParts(sheets);
+  for (const [path, xml] of Object.entries(chartParts.files)) zip.file(path, xml);
+  sheets.forEach((sh, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sh, i === book.active, chartParts.drawingOf.has(i))));
+  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>${chartParts.overrides.join('')}</Types>`);
   zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
   zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${NS.main}" xmlns:r="${NS.rel}"><bookViews><workbookView activeTab="${Math.min(book.active, sheets.length - 1)}"/></bookViews><sheets>${sheets.map((s, i) => `<sheet name="${esc(clean(s.name).slice(0, 31) || `Sheet${i + 1}`)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${anyFormula ? '<calcPr fullCalcOnLoad="1"/>' : ''}</workbook>`);
   zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId${sheets.length + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`);

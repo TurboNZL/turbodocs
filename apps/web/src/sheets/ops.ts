@@ -1,5 +1,6 @@
 import { isNumeric, key, numberOf, unkey, type Borders, type Cell, type CellFmt, type CellValue, type Edge, type Range, type Sheet } from './model.ts';
 import { isDateCode } from './format.ts';
+import { shiftCharts } from './charts.ts';
 
 /** Pure edits of a sheet: each returns a new sheet and leaves the old one alone (that is what undo keeps). */
 const copy = (s: Sheet): Sheet => ({ ...s, cells: { ...s.cells }, colW: { ...s.colW }, rowH: { ...s.rowH }, merges: s.merges.map((m) => ({ ...m })) });
@@ -45,6 +46,7 @@ export function insertRows(s: Sheet, at: number, n = 1): Sheet {
   for (const [k, v] of Object.entries(s.cells)) { const [r, c] = unkey(k); o.cells[key(r >= at ? r + n : r, c)] = v; }
   for (const [r, h] of Object.entries(s.rowH)) o.rowH[Number(r) >= at ? Number(r) + n : Number(r)] = h;
   o.merges = s.merges.map((m) => (m.r1 >= at ? { ...m, r1: m.r1 + n, r2: m.r2 + n } : m.r2 >= at ? { ...m, r2: m.r2 + n } : { ...m }));
+  o.charts = shiftCharts(s.charts, 'r', { insert: { at, n } });
   return o;
 }
 export function deleteRows(s: Sheet, from: number, to: number): Sheet {
@@ -57,6 +59,7 @@ export function deleteRows(s: Sheet, from: number, to: number): Sheet {
     const r1 = m.r1 < from ? m.r1 : from, r2 = m.r2 > to ? m.r2 - n : from - 1;
     return r2 >= r1 && (r2 > r1 || m.c2 > m.c1) ? [{ ...m, r1, r2 }] : [];
   });
+  o.charts = shiftCharts(s.charts, 'r', { remove: { from, to } });
   return o;
 }
 export function insertCols(s: Sheet, at: number, n = 1): Sheet {
@@ -64,6 +67,7 @@ export function insertCols(s: Sheet, at: number, n = 1): Sheet {
   for (const [k, v] of Object.entries(s.cells)) { const [r, c] = unkey(k); o.cells[key(r, c >= at ? c + n : c)] = v; }
   for (const [c, w] of Object.entries(s.colW)) o.colW[Number(c) >= at ? Number(c) + n : Number(c)] = w;
   o.merges = s.merges.map((m) => (m.c1 >= at ? { ...m, c1: m.c1 + n, c2: m.c2 + n } : m.c2 >= at ? { ...m, c2: m.c2 + n } : { ...m }));
+  o.charts = shiftCharts(s.charts, 'c', { insert: { at, n } });
   return o;
 }
 export function deleteCols(s: Sheet, from: number, to: number): Sheet {
@@ -76,6 +80,7 @@ export function deleteCols(s: Sheet, from: number, to: number): Sheet {
     const c1 = m.c1 < from ? m.c1 : from, c2 = m.c2 > to ? m.c2 - n : from - 1;
     return c2 >= c1 && (c2 > c1 || m.r2 > m.r1) ? [{ ...m, c1, c2 }] : [];
   });
+  o.charts = shiftCharts(s.charts, 'c', { remove: { from, to } });
   return o;
 }
 

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowDownAZ, ArrowUpAZ, Baseline, Bold, DollarSign, Grid3x3, Italic, Merge, PaintBucket, Percent, Plus, Redo2, Search, Underline, Undo2, WrapText, X } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowDownAZ, ArrowUpAZ, Baseline, Bold, DollarSign, Grid3x3, Italic, Merge, BarChart3, PaintBucket, Percent, Plus, Redo2, Search, Underline, Undo2, WrapText, X } from 'lucide-react';
 import { Grid, editText, type ContextAt, type GridHandle, type Pos, type Sel } from './Grid.tsx';
-import { extent, key, MIN_COLS, MIN_ROWS, norm, parseInput, rangeText, type Cell, type CellFmt, type Edge, type Range, type Sheet, type Workbook } from './model.ts';
+import { colLeft, extent, key, MIN_COLS, MIN_ROWS, norm, numberOf, parseInput, parseRange, rangeText, rowTop, type Cell, type CellFmt, type Chart, type ChartType, type Edge, type Range, type Sheet, type Workbook } from './model.ts';
 import { autofill, setBorders, type BorderMode, clearRange, deleteCols, deleteRows, fill, formatRange, fromTsv, insertCols, insertRows, mergeAt, mergeRange, setMany, setValue, sortRange, stats, toTsv, unmergeRange, allHave } from './ops.ts';
 import { formatCell, NUMBER_FORMATS, dateToSerial, changeDecimals } from './format.ts';
+import { chartId, currentRegion, guessHeaders } from './charts.ts';
 import { findAll, replacedText, replacementValue, type FindOpts } from './find.ts';
 import { exportXlsx } from './xlsx.ts';
 import { exportCsv } from './csv.ts';
 import { MenuBar, type MenuDef, type MenuItem } from '../components/MenuBar.tsx';
 import { ContextMenu } from '../components/ContextMenu.tsx';
+import { Dialog } from '../components/Dialog.tsx';
 import { FontBox } from '../components/FontBox.tsx';
 import { Btn, Sep, SplitColour } from '../editor/Toolbar.tsx';
 import { StatusBar } from '../editor/StatusBar.tsx';
@@ -56,6 +58,8 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const [borderColour, setBorderColour] = useState('#000000');
   const [borderStyle, setBorderStyle] = useState<Edge['st']>('thin');
   const [ctx, setCtx] = useState<{ at: { x: number; y: number }; kind: ContextAt['kind'] } | null>(null);
+  const [chartSel, setChartSel] = useState<string | null>(null);
+  const [chartDlg, setChartDlg] = useState<{ id?: string; type: ChartType; title: string; range: string; header: boolean; labels: boolean; error?: string } | null>(null);
   const [find, setFind] = useState<{ q: string; rep: string; matchCase: boolean; wholeCell: boolean; idx: number } | null>(null);
   const grid = useRef<GridHandle>(null);
   const clip = useRef<{ text: string; cells: Cell[][] } | null>(null);
@@ -105,6 +109,27 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     if (!isCsv && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) { const d = new Date(`${v.trim()}T00:00:00Z`); if (!Number.isNaN(d.getTime())) { v = dateToSerial(d); nf = 'yyyy-mm-dd'; } }
     return setValue(s0, r, c, v, nf ? { nf } : undefined);
   };
+
+  // ---- charts
+  const CHART_TYPES: [ChartType, string][] = [['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['pie', 'Pie']];
+  const openChartDlg = (id?: string) => {
+    const ch = id ? sheet.charts?.find((c) => c.id === id) : undefined;
+    if (ch) { setChartDlg({ id, type: ch.type, title: ch.title, range: rangeText(ch.range), header: ch.header, labels: ch.labels }); return; }
+    const single = range.r1 === range.r2 && range.c1 === range.c2;
+    const g = single ? currentRegion(sheet, active) : range;
+    setChartDlg({ type: 'column', title: '', range: rangeText(g), ...guessHeaders(sheet, g) });
+  };
+  const closeChartDlg = () => { setChartDlg(null); setTimeout(() => grid.current?.focus(), 0); };
+  const saveChart = () => {
+    if (!chartDlg) return;
+    const g = parseRange(chartDlg.range.trim());
+    if (!g) { setChartDlg({ ...chartDlg, error: 'Type the data as a range such as A1:C6.' }); return; }
+    if (chartDlg.id) { edit((s0) => ({ ...s0, charts: (s0.charts ?? []).map((c) => (c.id === chartDlg.id ? { ...c, type: chartDlg.type, title: chartDlg.title, range: g, header: chartDlg.header, labels: chartDlg.labels } : c)) })); closeChartDlg(); return; }
+    const ch: Chart = { id: chartId(), type: chartDlg.type, title: chartDlg.title, range: g, header: chartDlg.header, labels: chartDlg.labels, x: Math.round(colLeft(sheet, g.c2 + 1) + 24), y: Math.round(rowTop(sheet, g.r1)), w: 480, h: 300 };
+    edit((s0) => ({ ...s0, charts: [...(s0.charts ?? []), ch] })); setChartSel(ch.id); closeChartDlg();
+  };
+  const deleteChart = (id: string) => { edit((s0) => ({ ...s0, charts: (s0.charts ?? []).filter((c) => c.id !== id) })); setChartSel(null); };
+  const moveChart = (id: string, f: { x: number; y: number; w: number; h: number }, first: boolean) => { h.set((b) => ({ ...b, sheets: b.sheets.map((s0, i) => (i === b.active ? { ...s0, charts: (s0.charts ?? []).map((c) => (c.id === id ? { ...c, ...f } : c)) } : s0)) }), first); setDirty(true); setDirtyState(true); touchRef.current(); };
 
   // ---- find and replace
   const findOpts: FindOpts = { matchCase: find?.matchCase ?? false, wholeCell: find?.wholeCell ?? false };
@@ -181,13 +206,15 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const addSheet = () => { let n = book.sheets.length + 1; while (book.sheets.some((s) => s.name === `${sheetBase}${n}`)) n++; commit((b) => ({ ...b, sheets: [...b.sheets, { name: `${sheetBase}${n}`, cells: {}, colW: {}, rowH: {}, merges: [] }], active: b.sheets.length })); select({ r: 0, c: 0 }); };
   const removeSheet = (i: number) => { if (book.sheets.length < 2 || !window.confirm(`Delete the sheet “${book.sheets[i].name}”?`)) return; commit((b) => ({ ...b, sheets: b.sheets.filter((_, j) => j !== i), active: Math.max(0, Math.min(b.active, b.sheets.length - 2)) })); };
   const renameSheet = (i: number, to: string) => { const t = to.trim().replace(/[\\/?*[\]:]/g, '').slice(0, 31); if (t && !book.sheets.some((s, j) => j !== i && s.name.toLowerCase() === t.toLowerCase())) commit((b) => ({ ...b, sheets: b.sheets.map((s, j) => (j === i ? { ...s, name: t } : s)) })); setRenaming(null); };
-  const showSheet = (i: number) => { if (editing) finish(editing); h.set((b) => ({ ...b, active: i }), false); select({ r: 0, c: 0 }); };
+  const showSheet = (i: number) => { if (editing) finish(editing); setChartSel(null); h.set((b) => ({ ...b, active: i }), false); select({ r: 0, c: 0 }); };
 
   // ---- keyboard
   const onKey = (e: React.KeyboardEvent): boolean => {
     const mod = e.ctrlKey || e.metaKey, k = e.key;
     const extendOrMove = (to: Pos) => { const p = clampPos(to); if (e.shiftKey) select(sel.anchor, p); else select(p); };
     const f = sel.focus;
+    if (chartSel && (k === 'Delete' || k === 'Backspace')) { deleteChart(chartSel); return true; }
+    if (chartSel && k === 'Escape') { setChartSel(null); return true; }
     if (mod && !e.altKey) {
       const l = k.toLowerCase();
       if (l === 's') { void doSave(e.shiftKey); return true; }
@@ -257,6 +284,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     { label: 'Insert', items: [
       { label: 'Row above', run: () => { edit((s) => insertRows(s, range.r1, range.r2 - range.r1 + 1)); } }, { label: 'Row below', run: () => { edit((s) => insertRows(s, range.r2 + 1, range.r2 - range.r1 + 1)); } },
       { label: 'Column left', run: () => { edit((s) => insertCols(s, range.c1, range.c2 - range.c1 + 1)); } }, { label: 'Column right', run: () => { edit((s) => insertCols(s, range.c2 + 1, range.c2 - range.c1 + 1)); } }, sep,
+      ...(isCsv ? [] : [{ label: 'Chart…', run: () => openChartDlg() } as MenuItem, ...(chartSel ? [{ label: 'Edit the selected chart…', run: () => openChartDlg(chartSel) } as MenuItem, { label: 'Delete the selected chart', run: () => deleteChart(chartSel) } as MenuItem] : []), sep]),
       { label: 'Delete row(s)', run: () => edit((s) => deleteRows(s, rowsSel.from, rowsSel.to)) }, { label: 'Delete column(s)', run: () => edit((s) => deleteCols(s, colsSel.from, colsSel.to)) }, ...(isCsv ? [] : [sep, { label: 'New sheet', run: addSheet } as MenuItem]),
     ] },
     { label: 'Format', items: [
@@ -343,6 +371,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           {NUMBER_FORMATS.map((n) => <option key={n.label}>{n.label}</option>)}
         </select>
         <Sep />
+        {!isCsv && <Btn label="Insert chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>}
         <Btn label="Sort A to Z by this column" onClick={() => sortBy(true)}><ArrowDownAZ size={16} /></Btn>
         <Btn label="Sort Z to A by this column" onClick={() => sortBy(false)}><ArrowUpAZ size={16} /></Btn>
       </div>
@@ -355,7 +384,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       <div className="relative flex min-h-0 flex-1 flex-col">
         <Grid ref={grid} sheet={sheet} rows={rows} cols={cols} zoom={zoom} sel={sel} onSel={(s) => { setSel(s); setBar(null); }} editing={editing} setEditing={setEditing} onCommit={(p, t, m) => finish({ pos: p, text: t, typed: false }, m)}
           onKey={onKey} onResize={(kind, i, size) => edit((s) => (kind === 'col' ? { ...s, colW: { ...s.colW, [i]: size } } : { ...s, rowH: { ...s.rowH, [i]: size } }))} onCopy={doCopy} onPaste={doPaste}
-          onFill={onFill} onContext={(c) => setCtx({ at: { x: c.x, y: c.y }, kind: c.kind })} hits={find ? hitSet : undefined} hitNow={hitAt ? key(hitAt.r, hitAt.c) : null} />
+          chartSel={chartSel} onChartSel={setChartSel} onChartMove={moveChart} onChartEdit={openChartDlg} onFill={onFill} onContext={(c) => setCtx({ at: { x: c.x, y: c.y }, kind: c.kind })} hits={find ? hitSet : undefined} hitNow={hitAt ? key(hitAt.r, hitAt.c) : null} />
         {find && (
           <div role="search" aria-label="Find and replace" className="bt-window tk-pop absolute right-5 top-2 z-20 w-72 p-2 text-sm shadow-lg">
             <div className="mb-1 flex items-center gap-1">
@@ -379,6 +408,23 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           </div>
         )}
       </div>
+      {chartDlg && (
+        <Dialog title={chartDlg.id ? 'Edit chart' : 'Insert chart'} onClose={() => closeChartDlg()} footer={<>
+          {chartDlg.id && <button className="btn mr-auto" onClick={() => { deleteChart(chartDlg.id!); closeChartDlg(); }}>Delete chart</button>}
+          <button className="btn" onClick={() => closeChartDlg()}>Cancel</button><button className="btn btn-accent" onClick={saveChart}>{chartDlg.id ? 'Update' : 'Insert'}</button></>}>
+          <div className="grid gap-3 text-sm">
+            <label className="grid gap-1">Chart type
+              <select aria-label="Chart type" className="input" value={chartDlg.type} onChange={(e) => setChartDlg({ ...chartDlg, type: e.target.value as ChartType })}>{CHART_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select></label>
+            <label className="grid gap-1">Title <input aria-label="Chart title" className="input" value={chartDlg.title} onChange={(e) => setChartDlg({ ...chartDlg, title: e.target.value })} /></label>
+            <label className="grid gap-1">Data range <input aria-label="Data range" className="input" value={chartDlg.range} onChange={(e) => setChartDlg({ ...chartDlg, range: e.target.value, error: undefined })} /></label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-1"><input type="checkbox" checked={chartDlg.header} onChange={(e) => setChartDlg({ ...chartDlg, header: e.target.checked })} />First row has the series names</label>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={chartDlg.labels} onChange={(e) => setChartDlg({ ...chartDlg, labels: e.target.checked })} />First column has the labels</label>
+            </div>
+            {chartDlg.error && <p role="alert" className="text-bad">{chartDlg.error}</p>}
+          </div>
+        </Dialog>
+      )}
       {ctx && <ContextMenu at={ctx.at} items={ctxItems(ctx.kind)} onClose={() => { setCtx(null); grid.current?.focus(); }} />}
       <div className="bt-footer flex items-stretch overflow-x-auto border-t border-line" role="tablist" aria-label="Sheets">
         {book.sheets.map((s, i) => renaming === i

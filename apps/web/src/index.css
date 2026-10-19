@@ -114,6 +114,9 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .sheet-frozen-left { box-shadow: 2px 0 0 hsl(var(--muted) / 0.6); }
 .sheet-frozen-corner { z-index: 4; box-shadow: 0 2px 0 hsl(var(--muted) / 0.6), 2px 0 0 hsl(var(--muted) / 0.6); }
 .sheet-pinned { position: absolute; background: hsl(var(--raised)); overflow: hidden; z-index: 2; }
+.sheet-chart { position: absolute; z-index: 2; border: 1px solid hsl(var(--line)); box-shadow: 0 1px 6px hsl(0 0% 0% / 0.18); background: hsl(var(--bg)); cursor: move; overflow: hidden; }
+.sheet-chart.sel { outline: 2px solid hsl(var(--accent)); }
+.sheet-chart-grip { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; background: hsl(var(--accent)); cursor: nwse-resize; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
 .sheet-fill { position: absolute; width: 8px; height: 8px; background: hsl(var(--accent)); border: 1px solid hsl(var(--bg)); box-sizing: border-box; cursor: crosshair; z-index: 3; }
 .sheet-fillto { position: absolute; pointer-events: none; border: 2px dashed hsl(var(--accent)); box-sizing: border-box; z-index: 2; }
 .sheet-hit { background-image: linear-gradient(hsl(48 95% 60% / 0.35), hsl(48 95% 60% / 0.35)); }

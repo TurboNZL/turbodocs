@@ -2,6 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import { cellText, colName, DEFAULT_COL_W, DEFAULT_ROW_H, isNumeric, key, type Cell, type Edge, type Range, type Sheet } from './model.ts';
 import { formatCell } from './format.ts';
 import { mergeAt } from './ops.ts';
+import { ChartView } from './ChartView.tsx';
+import { chartData } from './charts.ts';
 
 export interface Pos { r: number; c: number }
 export interface Sel { anchor: Pos; focus: Pos }
@@ -21,13 +23,15 @@ interface Props {
   onCopy(cut: boolean): string | null; onPaste(text: string): void; readOnly?: boolean;
   /** the fill handle was dragged from `src` over `to` */ onFill?(src: Range, to: Range): void; onContext?(at: ContextAt): void;
   /** cells found by Find (and the one the search is on), drawn tinted */ hits?: Set<string>; hitNow?: string | null;
+  /** charts float over the cells: click selects, drag moves, the corner resizes, double-click edits */
+  chartSel?: string | null; onChartSel?(id: string | null): void; onChartMove?(id: string, f: { x: number; y: number; w: number; h: number }, first: boolean): void; onChartEdit?(id: string): void;
 }
 
 /**
  * The grid: only the rows and columns in view are drawn, so a sheet of tens of thousands of rows scrolls smoothly. Click and drag select, the headers select
  * a whole column or row and their edges resize it. Keyboard and clipboard are handled by the container; typing starts editing the active cell.
  */
-export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste, onFill, onContext, hits, hitNow }, ref) {
+export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste, onFill, onContext, hits, hitNow, chartSel, onChartSel, onChartMove, onChartEdit }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 900, h: 500 });
@@ -70,6 +74,7 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
   };
   const down = (e: React.PointerEvent, kind: 'cells' | 'cols' | 'rows', p: Pos) => {
     if (e.button !== 0) return;
+    onChartSel?.(null);
     if (editing) onCommit(editing.pos, editing.text, null);
     box.current?.focus({ preventScroll: true });
     dragging.current = kind;
@@ -193,6 +198,29 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
       </>
     );
   };
+  const dragChart = (e: React.PointerEvent, id: string, mode: 'move' | 'size') => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    if (editing) onCommit(editing.pos, editing.text, null);
+    onChartSel?.(id);
+    box.current?.focus({ preventScroll: true });
+    const ch = sheet.charts?.find((c) => c.id === id); if (!ch || !onChartMove) return;
+    const x0 = e.clientX, y0 = e.clientY; let first = true, moved = false;
+    const mv = (m: PointerEvent) => {
+      const dx = (m.clientX - x0) / z, dy = (m.clientY - y0) / z;
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+      moved = true;
+      onChartMove(id, mode === 'move' ? { x: Math.max(0, Math.round(ch.x + dx)), y: Math.max(0, Math.round(ch.y + dy)), w: ch.w, h: ch.h } : { x: ch.x, y: ch.y, w: Math.max(160, Math.round(ch.w + dx)), h: Math.max(120, Math.round(ch.h + dy)) }, first); first = false;
+    };
+    const end = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', end); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end);
+  };
+  const chartLayer = (sheet.charts ?? []).map((ch) => (
+    <div key={ch.id} className={`sheet-chart${chartSel === ch.id ? ' sel' : ''}`} data-chart={ch.id} style={{ left: ch.x, top: ch.y, width: ch.w, height: ch.h }} onPointerDown={(e) => dragChart(e, ch.id, 'move')} onDoubleClick={() => onChartEdit?.(ch.id)}>
+      <ChartView chart={ch} data={chartData(sheet, ch)} w={ch.w} h={ch.h} />
+      {chartSel === ch.id && <span className="sheet-chart-grip" aria-label="Resize chart" onPointerDown={(e) => dragChart(e, ch.id, 'size')} />}
+    </div>
+  ));
   const fw = colX[fc] * z, fh = rowY[fr] * z;
   const layer = (style: React.CSSProperties, moveX: boolean, moveY: boolean, w: number, h: number, children: React.ReactNode, name: string) => (
     <div className={`sheet-frozen sheet-frozen-${name}`} style={style}>
@@ -214,6 +242,7 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
           <div style={{ position: 'absolute', left: HEAD_W, top: HEAD_H }}>
             <div className="sheet-body" style={{ zoom: z, width: colX[cols], height: rowY[rows] }}>
               {block(Math.max(r0, fr), r1, Math.max(c0, fc), c1)}
+              {chartLayer}
               {marks('main')}
             </div>
           </div>
