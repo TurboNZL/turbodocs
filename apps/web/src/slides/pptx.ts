@@ -1,12 +1,12 @@
 import JSZip from 'jszip';
-import { cellTint } from './tableOps.ts';
+import { cellTint, isCovered, mergeOf } from './tableOps.ts';
 import { DOMParser } from '@xmldom/xmldom';
-import { DEFAULT_SIZE, defaultTextColor, uid, type Deck, type El, type Geometry, type LineEl, type Para, type Role, type Run, type Slide, type TableEl, type TCell, type TextEl } from './model.ts';
+import { DEFAULT_SIZE, defaultTextColor, uid, type ChartEl, type Crop, type Deck, type El, type Geometry, type LineEl, type Para, type Role, type Run, type Slide, type SlideChartType, type TMerge, type TableEl, type TCell, type TextEl, type Transition } from './model.ts';
 
 /**
  * .pptx -> Deck. Read straight from the file's XML, like the Word and Excel importers: slides in order, text boxes and placeholders with the position, size,
  * font, colour, bullets, numbering and line spacing they get from their layout, master and theme, preset shapes with fills, lines and arrows, tables, rotation, pictures,
- * backgrounds and speaker notes. What it cannot keep (charts, diagrams, animations, video, other shapes) is listed in `warnings` and is not in the file saved from here.
+ * backgrounds, slide transitions, picture cropping, merged table cells, simple charts (column, bar, line, area, pie) and speaker notes. What it cannot keep (other charts, diagrams, animations, video, other shapes) is listed in `warnings` and is not in the file saved from here.
  */
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -55,6 +55,25 @@ function blendLinear(hexc: string, v: number, tint: boolean): string {
   return `#${ch.join('')}`;
 }
 const PRESET: Record<string, string> = { black: '#000000', white: '#ffffff', red: '#ff0000', green: '#008000', blue: '#0000ff', yellow: '#ffff00', gray: '#808080', grey: '#808080', orange: '#ffa500', purple: '#800080' };
+
+/** a chart's own numbers (the values cached in the file), for the kinds a slide can show */
+function readSlideChart(root: El_, f: { x: number; y: number; w: number; h: number }, warnings: Set<string>): ChartEl | null {
+  const plot = desc(root, 'plotArea')[0];
+  const group = plot && kids(plot).find((k) => /Chart$/.test(k.localName));
+  const kind = group?.localName ?? '';
+  const type: SlideChartType | null = kind === 'barChart' ? (kid(group, 'barDir')?.getAttribute('val') === 'bar' ? 'bar' : 'column') : kind === 'lineChart' ? 'line' : kind === 'areaChart' ? 'area' : kind === 'pieChart' || kind === 'doughnutChart' ? 'pie' : null;
+  if (!group || !type) { warnings.add(`A ${kind.replace(/Chart$/, '') || 'chart'} chart is not shown (only column, bar, line, area and pie charts are).`); return null; }
+  const pts = (e: El_ | undefined) => { const out: string[] = []; if (!e) return out; const n = Number(kid(desc(e, 'ptCount')[0] ? e : e, 'ptCount')?.getAttribute('val') ?? desc(e, 'ptCount')[0]?.getAttribute('val') ?? 0); for (let i = 0; i < n; i++) out.push(''); for (const p of desc(e, 'pt')) out[Number(p.getAttribute('idx'))] = kid(p, 'v')?.textContent ?? ''; return out; };
+  const sers = kids(group, 'ser');
+  const series = sers.map((s, i) => ({ name: pts(desc(kids(s, 'tx')[0] ?? s, 'strCache')[0])[0] || kids(s, 'tx')[0]?.textContent?.trim() || `Series ${i + 1}`, values: pts(desc(kids(s, 'val')[0] ?? s, 'numCache')[0]).map((v) => (v === '' || Number.isNaN(Number(v)) ? null : Number(v))) }));
+  const catEl = kids(sers[0], 'cat')[0];
+  const catCache = catEl ? (desc(catEl, 'strCache')[0] ?? desc(catEl, 'multiLvlStrCache')[0] ?? desc(catEl, 'numCache')[0]) : undefined;
+  const cats = pts(catCache);
+  const n = Math.max(cats.length, ...series.map((s) => s.values.length), 0);
+  if (!series.length || !n) { warnings.add('A chart without numbers is not shown.'); return null; }
+  const title = desc(kid(root, 'chart') ?? root, 'title')[0];
+  return { id: uid(), kind: 'chart', type, title: title ? desc(title, 't').map((t) => t.textContent ?? '').join('') : '', cats: Array.from({ length: n }, (_, i) => cats[i] || String(i + 1)), series: series.map((s) => ({ ...s, values: Array.from({ length: n }, (_, i) => s.values[i] ?? null) })), ...f };
+}
 
 export interface ImportedDeck { deck: Deck; warnings: string[] }
 
@@ -201,16 +220,21 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
         if (rp?.getAttribute('sz')) { const sz = Number(rp.getAttribute('sz')) / 100; if (sz !== 18) c.size = sz; }
         const fill = colorIn(kid(kid(tc, 'tcPr'), 'solidFill'), ctx); if (fill) c.fill = fill;
         const al = kid(paras[0], 'pPr')?.getAttribute('algn'); if (al === 'ctr') c.align = 'center'; else if (al === 'r') c.align = 'right';
-        if (tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') warnings.add('Merged table cells are shown unmerged.');
         out.push(c);
       }
       while (out.length < cols.length) out.push({ t: '' });
       return out.slice(0, cols.length);
     });
-    return { id: uid(), kind: 'table', x: (Number(off?.getAttribute('x') ?? 0) * xf.sx + xf.dx) / EMU, y: (Number(off?.getAttribute('y') ?? 0) * xf.sy + xf.dy) / EMU, w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0), cols, rows, cells,
+    const merges: TMerge[] = [];
+    trs.forEach((tr, r) => kids(tr, 'tc').forEach((tc, c) => { const cs = Number(tc.getAttribute('gridSpan') ?? 1), rs = Number(tc.getAttribute('rowSpan') ?? 1); if ((cs > 1 || rs > 1) && c < cols.length) merges.push({ r, c, rs: Math.min(rs, trs.length - r), cs: Math.min(cs, cols.length - c) }); }));
+    return { id: uid(), kind: 'table', ...(merges.length ? { merges } : {}), x: (Number(off?.getAttribute('x') ?? 0) * xf.sx + xf.dx) / EMU, y: (Number(off?.getAttribute('y') ?? 0) * xf.sy + xf.dy) / EMU, w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0), cols, rows, cells,
       header: pr?.getAttribute('firstRow') === '1', banded: pr?.getAttribute('bandRow') === '1', accent, border: '#b8bcc2' };
   };
 
+  const xfrmOfFrame = (frame: El_, xf: { sx: number; sy: number; dx: number; dy: number }) => {
+    const x = kid(frame, 'xfrm'), off = kid(x, 'off'), ext = kid(x, 'ext');
+    return { x: (Number(off?.getAttribute('x') ?? 0) * xf.sx + xf.dx) / EMU, y: (Number(off?.getAttribute('y') ?? 0) * xf.sy + xf.dy) / EMU, w: (Number(ext?.getAttribute('cx') ?? 0) * xf.sx) / EMU, h: (Number(ext?.getAttribute('cy') ?? 0) * xf.sy) / EMU };
+  };
   const deck: Deck = { w: W, h: H, font: 'Calibri', slides: [] };
   const defaultTextStyle = kid(pres.el, 'defaultTextStyle');
 
@@ -236,7 +260,13 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
       out.bg = fill ? colorIn(fill, ctx) : ref ? colorIn(ref, ctx) : undefined;
       if (out.bg || kid(bg, 'bgPr')) break;
     }
-    if (kid(slide.el, 'timing') || kid(slide.el, 'transition')) warnings.add('Animations and slide transitions.');
+    if (kid(slide.el, 'timing')) warnings.add('Animations.');
+    const tr = kid(slide.el, 'transition') ?? kid(kid(slide.el, 'AlternateContent'), 'Choice', 'transition') ?? desc(slide.el, 'transition')[0];
+    if (tr) {
+      const first = kids(tr).find((k) => !['sndAc', 'extLst'].includes(k.localName))?.localName;
+      const map: Record<string, Transition> = { fade: 'fade', push: 'push', cover: 'push', pull: 'push', wipe: 'wipe', split: 'wipe', zoom: 'zoom', circle: 'zoom', diamond: 'zoom' };
+      if (first) out.trans = map[first] ?? 'fade';
+    }
 
     const place = async (tree: El_, owner: Part, xf: { sx: number; sy: number; dx: number; dy: number }) => {
       for (const node of kids(tree)) {
@@ -252,7 +282,15 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
         if (n === 'graphicFrame') {
           const tbl = desc(node, 'tbl')[0];
           const fx = kid(node, 'xfrm'), off = kid(fx, 'off');
-          if (!tbl || !off) { warnings.add('Charts and diagrams are not shown (they are not in the file saved from here).'); continue; }
+          const chartRef = desc(node, 'chart')[0];
+          if (chartRef && off) {
+            const target = owner.rels.get(rid(chartRef))?.target;
+            const cp = target ? await part(target) : null;
+            const el = cp ? readSlideChart(cp.el, xfrmOfFrame(node, xf), warnings) : null;
+            if (el) out.els.push(el); else if (!cp) warnings.add('A chart could not be read.');
+            continue;
+          }
+          if (!tbl || !off) { warnings.add('Diagrams and other embedded objects are not shown (they are not in the file saved from here).'); continue; }
           out.els.push(readTable(node, tbl, ctx, xf));
           continue;
         }
@@ -274,8 +312,10 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
           const src = blip ? await imageOf(owner, blip) : null;
           if (src) {
             const rect = desc(node, 'srcRect')[0];
-            if (rect && ['l', 't', 'r', 'b'].some((k) => Number(rect.getAttribute(k)) > 0)) warnings.add('Picture cropping (pictures are shown uncropped).');
-            out.els.push({ id: uid(), kind: 'image', src, alt: desc(node, 'cNvPr')[0]?.getAttribute('descr') || undefined, x: f.x, y: f.y, w: f.w, h: f.h, ...(rot ? { rot } : {}) });
+            const part = (k: string) => Math.max(0, Math.min(0.9, Number(rect?.getAttribute(k) ?? 0) / 100000));
+            const crop: Crop = { l: part('l'), t: part('t'), r: part('r'), b: part('b') };
+            const cropped = crop.l > 0 || crop.t > 0 || crop.r > 0 || crop.b > 0;
+            out.els.push({ id: uid(), kind: 'image', src, alt: desc(node, 'cNvPr')[0]?.getAttribute('descr') || undefined, x: f.x, y: f.y, w: f.w, h: f.h, ...(rot ? { rot } : {}), ...(cropped ? { crop } : {}) });
           }
           continue;
         }
@@ -366,22 +406,35 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
   pres.author = 'TurboDocs';
   const inch = (px: number) => px / 96;
   const hexOf = (c: string | undefined) => (c ? c.replace('#', '').toUpperCase() : undefined);
+  const crops: { slide: number; crop?: Crop }[] = [];
+  let slideNo = 0;
   for (const s of deck.slides) {
+    slideNo++;
     const slide = pres.addSlide();
     if (s.bg) slide.background = { color: hexOf(s.bg)! };
     for (const e of s.els) {
       const pos = { x: inch(e.x), y: inch(e.y), w: inch(e.w), h: inch(e.h) };
       const rotate = e.rot ? { rotate: e.rot } : {};
-      if (e.kind === 'image') { slide.addImage({ data: e.src.replace(/^data:/, ''), ...pos, ...rotate, altText: e.alt ?? undefined }); continue; }
+      if (e.kind === 'image') { slide.addImage({ data: e.src.replace(/^data:/, ''), ...pos, ...rotate, altText: e.alt ?? undefined }); crops.push({ slide: slideNo, crop: e.crop }); continue; }
+      if (e.kind === 'chart') {
+        const colors = ['4E79A7', 'F28E2B', 'E15759', '76B7B2', '59A14F', 'EDC948', 'B07AA1', 'FF9DA7'];
+        const ink = defaultTextColor(s.bg) === '#ffffff' ? 'FFFFFF' : '000000';
+        const data = (e.type === 'pie' ? e.series.slice(0, 1) : e.series).map((x) => ({ name: x.name, labels: e.cats, values: x.values.map((v) => v ?? 0) }));
+        const kind = e.type === 'pie' ? pres.ChartType.pie : e.type === 'line' ? pres.ChartType.line : e.type === 'area' ? pres.ChartType.area : pres.ChartType.bar;
+        slide.addChart(kind, data as never, { ...pos, ...rotate, ...(e.type === 'bar' ? { barDir: 'bar' } : e.type === 'column' ? { barDir: 'col' } : {}), chartColors: e.type === 'pie' ? e.cats.map((_, i) => colors[i % colors.length]) : colors.slice(0, data.length), showLegend: e.type === 'pie' || data.length > 1, legendPos: 'b', legendColor: ink, showTitle: !!e.title, title: e.title, titleColor: ink, titleFontSize: 16, catAxisLabelColor: ink, valAxisLabelColor: ink, valGridLine: { color: ink === 'FFFFFF' ? '555555' : 'D9D9D9', size: 0.5 }, dataLabelColor: ink, ...(e.type === 'pie' ? { showPercent: true, showValue: false, dataLabelColor: 'FFFFFF' } : {}) } as never);
+        continue;
+      }
       if (e.kind === 'line') {
         slide.addShape(pres.ShapeType.line, { ...pos, ...rotate, flipV: !!e.flipV, line: { color: hexOf(e.color)!, width: (e.width * 72) / 96, ...(e.dash ? { dashType: 'dash' as const } : {}), ...(e.head ? { beginArrowType: 'triangle' as const } : {}), ...(e.tail ? { endArrowType: 'triangle' as const } : {}) } } as never);
         continue;
       }
       if (e.kind === 'table') {
         const dark = defaultTextColor(s.bg) === '#ffffff';
-        const rows = e.cells.map((row, r) => row.map((c, ci) => {
+        const rows = e.cells.map((row, r) => row.flatMap((c, ci) => {
+          if (isCovered(e, r, ci)) return [];
+          const mg = mergeOf(e, r, ci);
           const fill = c.fill ?? cellTint(e, r, dark), head = e.header && r === 0;
-          return { text: c.t, options: { bold: c.b || head, italic: c.i, color: hexOf(c.color ?? (head ? defaultTextColor(fill) : defaultTextColor(s.bg))), ...(fill ? { fill: { color: hexOf(fill)! } } : {}), align: c.align ?? 'left', valign: 'middle', fontSize: c.size ?? 18, fontFace: deck.font } };
+          return [{ text: c.t, options: { ...(mg && mg.cs > 1 ? { colspan: mg.cs } : {}), ...(mg && mg.rs > 1 ? { rowspan: mg.rs } : {}), bold: c.b || head, italic: c.i, color: hexOf(c.color ?? (head ? defaultTextColor(fill) : defaultTextColor(s.bg))), ...(fill ? { fill: { color: hexOf(fill)! } } : {}), align: c.align ?? 'left', valign: 'middle', fontSize: c.size ?? 18, fontFace: deck.font } }];
         }));
         slide.addTable(rows as never, { ...pos, colW: e.cols.map(inch), rowH: e.rows.map(inch), border: { type: 'solid', pt: 0.75, color: hexOf(e.border)! }, margin: [3, 7.5, 3, 7.5] } as never);
         continue;
@@ -406,5 +459,32 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
     if (s.notes) slide.addNotes(s.notes);
   }
   const out = (await pres.write({ outputType: 'uint8array' })) as Uint8Array;
-  return out;
+  return await patchSlides(out, deck, crops);
+}
+
+const TRANSITION_XML: Record<Transition, string> = { fade: '<p:fade/>', push: '<p:push dir="l"/>', wipe: '<p:wipe dir="l"/>', zoom: '<p:zoom dir="in"/>' };
+/** What pptxgenjs cannot write: slide transitions and picture crops, put into the finished slides' XML. */
+async function patchSlides(bytes: Uint8Array, deck: Deck, crops: { slide: number; crop?: Crop }[]): Promise<Uint8Array> {
+  const cropped = crops.some((c) => c.crop && (c.crop.l || c.crop.t || c.crop.r || c.crop.b));
+  if (!cropped && !deck.slides.some((s) => s.trans)) return bytes;
+  const zip = await JSZip.loadAsync(bytes);
+  for (const [i, s] of deck.slides.entries()) {
+    const path = `ppt/slides/slide${i + 1}.xml`;
+    let xml = await zip.file(path)?.async('string');
+    if (!xml) continue;
+    const before = xml;
+    const mine = crops.filter((c) => c.slide === i + 1);
+    if (mine.some((c) => c.crop)) {
+      let n = 0;
+      xml = xml.replace(/<p:pic>[\s\S]*?<\/p:pic>/g, (pic) => {
+        const c = mine[n++]?.crop;
+        if (!c || !(c.l || c.t || c.r || c.b)) return pic;
+        const v = (x: number) => Math.round(x * 100000);
+        return pic.replace(/<a:srcRect[^>]*\/>/, '').replace('<a:stretch>', `<a:srcRect l="${v(c.l)}" t="${v(c.t)}" r="${v(c.r)}" b="${v(c.b)}"/><a:stretch>`);
+      });
+    }
+    if (s.trans) xml = xml.replace(/<\/p:clrMapOvr>/, `</p:clrMapOvr><p:transition spd="med">${TRANSITION_XML[s.trans]}</p:transition>`);
+    if (xml !== before) zip.file(path, xml);
+  }
+  return await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }

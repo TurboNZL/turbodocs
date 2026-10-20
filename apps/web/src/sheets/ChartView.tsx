@@ -1,11 +1,14 @@
 import { niceAxis, PALETTE, shortNumber, type ChartData } from './charts.ts';
 import type { Chart } from './model.ts';
 
-const FG = 'hsl(var(--fg))', MUTED = 'hsl(var(--muted))', LINE = 'hsl(var(--line))';
+const D_FG = 'hsl(var(--fg))', D_MUTED = 'hsl(var(--muted))', D_LINE = 'hsl(var(--line))';
+/** colours of the chart's text and lines (the page's by default; a slide passes its own) */
+export interface Ink { fg: string; muted: string; line: string; bg: string }
 const trim = (t: string, n: number) => (t.length > n ? `${t.slice(0, Math.max(1, n - 1))}…` : t);
 
 /** A chart drawn as SVG (column, bar, line or pie) from its data; colours come from one fixed palette, text and grid from the theme's tokens. */
-export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | 'title'>; data: ChartData; w: number; h: number }) {
+export function ChartView({ chart, data, w, h, ink }: { chart: { type: Chart['type']; title: string }; data: ChartData; w: number; h: number; ink?: Ink }) {
+  const FG = ink?.fg ?? D_FG, MUTED = ink?.muted ?? D_MUTED, LINE = ink?.line ?? D_LINE, BG = ink?.bg ?? 'hsl(var(--bg))';
   const { type } = chart;
   const pie = type === 'pie';
   const legend = pie ? data.cats.map((c, i) => ({ name: c, color: PALETTE[i % PALETTE.length] })) : data.series.map((s, i) => ({ name: s.name, color: PALETTE[i % PALETTE.length] }));
@@ -25,10 +28,10 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
   const empty = data.series.length === 0 || (pie ? false : all.length === 0);
   return (
     <svg width={w} height={h} role="img" aria-label={chart.title || `${type} chart`} style={{ display: 'block', fontSize: 12, fontFamily: 'inherit' }}>
-      <rect width={w} height={h} fill="hsl(var(--bg))" />
+      {BG !== 'none' && <rect width={w} height={h} fill={BG} />}
       {chart.title && <text x={w / 2} y={24} textAnchor="middle" fontSize={15} fontWeight={600} fill={FG}>{trim(chart.title, Math.floor(w / 8))}</text>}
       {empty && <text x={w / 2} y={h / 2} textAnchor="middle" fill={MUTED}>No numbers in the data range</text>}
-      {!empty && pie && <Pie data={data} cx={w / 2} cy={top + (h - top - bottom) / 2} r={Math.max(10, Math.min(w - 40, h - top - bottom - 10) / 2)} />}
+      {!empty && pie && <Pie data={data} muted={MUTED} bg={BG === 'none' ? 'transparent' : BG} cx={w / 2} cy={top + (h - top - bottom) / 2} r={Math.max(10, Math.min(w - 40, h - top - bottom - 10) / 2)} />}
       {!empty && !pie && (
         <g>
           {axis.ticks.map((t) => (horizontal
@@ -80,10 +83,10 @@ const itemWidth = (name: string) => 15 + Math.min(name.length, 18) * 6.6 + 16;
 const legendLayout = (names: string[]) => { let x = 0; return names.map((n) => { const p = { x }; x += itemWidth(n); return p; }); };
 const legendWidth = (names: string[]) => Math.min(names.reduce((a, n) => a + itemWidth(n), 0), 900);
 
-function Pie({ data, cx, cy, r }: { data: ChartData; cx: number; cy: number; r: number }) {
+function Pie({ data, cx, cy, r, muted, bg }: { data: ChartData; cx: number; cy: number; r: number; muted: string; bg: string }) {
   const vals = (data.series[0]?.values ?? []).map((v) => (v !== null && v > 0 ? v : 0));
   const total = vals.reduce((a, b) => a + b, 0);
-  if (!total) return <text x={cx} y={cy} textAnchor="middle" fill={MUTED}>No positive numbers in the data range</text>;
+  if (!total) return <text x={cx} y={cy} textAnchor="middle" fill={muted}>No positive numbers in the data range</text>;
   let a0 = -Math.PI / 2;
   return (
     <g>
@@ -96,7 +99,7 @@ function Pie({ data, cx, cy, r }: { data: ChartData; cx: number; cy: number; r: 
         a0 = a1;
         return (
           <g key={i}>
-            <path d={d} fill={PALETTE[i % PALETTE.length]} stroke="hsl(var(--bg))" strokeWidth={1.5}><title>{`${data.cats[i]}: ${v} (${Math.round((v / total) * 100)}%)`}</title></path>
+            <path d={d} fill={PALETTE[i % PALETTE.length]} stroke={bg} strokeWidth={1.5}><title>{`${data.cats[i]}: ${v} (${Math.round((v / total) * 100)}%)`}</title></path>
             {v / total > 0.06 && <text x={cx + r * 0.62 * Math.cos(mid)} y={cy + r * 0.62 * Math.sin(mid) + 4} textAnchor="middle" fill="#fff" fontWeight={600}>{Math.round((v / total) * 100)}%</text>}
           </g>
         );

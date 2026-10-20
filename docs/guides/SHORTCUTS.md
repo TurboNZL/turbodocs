@@ -41,6 +41,8 @@
 | Ctrl+A | Select the data |
 | Ctrl+B / I / U | Bold, italic, underline |
 | Ctrl+F / Ctrl+H | Find and replace (Enter: next match) |
+| Ctrl+K | Link on the selected cells |
+| Ctrl+click (a linked cell) | Open the link |
 | Right-click | Cut, copy, paste, insert, delete, sort, freeze |
 | Delete (chart selected) | Remove the chart |
 | Ctrl+Z / Ctrl+Y | Undo / redo |

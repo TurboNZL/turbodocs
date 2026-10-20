@@ -32,8 +32,8 @@ export function Present({ deck, start, onClose }: { deck: Deck; start: number; o
   });
   const scale = Math.min(size.w / deck.w, size.h / deck.h);
   return createPortal(
-    <div ref={root} className="fixed inset-0 z-[60] flex items-center justify-center bg-black" role="dialog" aria-label="Presentation" onClick={(e) => { if (e.clientX < size.w * 0.2) go(i - 1); else if (i === last) onClose(i); else go(i + 1); }} style={{ cursor: 'none' }}>
-      <div key={i} className="tk-fade"><SlideStage slide={deck.slides[i]} deck={deck} scale={scale} /></div>
+    <div ref={root} className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden bg-black" role="dialog" aria-label="Presentation" onClick={(e) => { if (e.clientX < size.w * 0.2) go(i - 1); else if (i === last) onClose(i); else go(i + 1); }} style={{ cursor: 'none' }}>
+      <div key={i} className={deck.slides[i].trans ? `tk-show-${deck.slides[i].trans}` : "tk-fade"}><SlideStage slide={deck.slides[i]} deck={deck} scale={scale} /></div>
       <span className="pointer-events-none absolute bottom-3 right-4 rounded bg-black/50 px-2 py-0.5 text-xs text-white/80" aria-live="polite">{i + 1} / {deck.slides.length}</span>
     </div>,
     document.body,

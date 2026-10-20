@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BringToFront, Circle, Copy, Image as ImageIcon, Italic, LayoutTemplate, List, ListOrdered, Minus, MoveRight, PaintBucket, Palette, Play, Plus, Redo2, RotateCw, SendToBack, Square, Table2, Trash2, Type, Underline, Undo2 } from 'lucide-react';
+import { BarChart3, AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BringToFront, Circle, Copy, Image as ImageIcon, Italic, LayoutTemplate, List, ListOrdered, Minus, MoveRight, PaintBucket, Palette, Play, Plus, Redo2, RotateCw, SendToBack, Square, Table2, Trash2, Type, Underline, Undo2 } from 'lucide-react';
 import { SlideCanvas, SlideStage, type CellRef, type Patch } from './SlideCanvas.tsx';
 import { Present } from './Present.tsx';
-import { bounds, clampFrame, cloneSlide, DEFAULT_SIZE, para, textBox, uid, type Deck, type El, type Geometry, type ImageEl, type LineEl, type Para, type Run, type Slide, type TableEl, type TCell, type TextEl } from './model.ts';
+import { bounds, clampFrame, cloneSlide, DEFAULT_SIZE, para, textBox, uid, type Deck, type El, type Geometry, type ChartEl, type ImageEl, type LineEl, type Para, type Run, type Slide, type SlideChartType, type TableEl, type TCell, type TextEl, type Transition } from './model.ts';
 import { applyLayout, layoutById, LAYOUTS, slideFromLayout, type Layout } from './layouts.ts';
 import { GEOMETRY_LABELS } from './shapes.ts';
-import { deleteCol, deleteRow, insertCol, insertRow, newTable, resizeTable, setCell } from './tableOps.ts';
+import { deleteCol, deleteRow, insertCol, insertRow, mergeNext, mergeOf, newTable, resizeTable, setCell, unmerge } from './tableOps.ts';
 import { exportPptx, importPptx } from './pptx.ts';
 import { MenuBar, type MenuDef, type MenuItem } from '../components/MenuBar.tsx';
 import { Dialog } from '../components/Dialog.tsx';
@@ -54,6 +54,8 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const [present, setPresent] = useState<number | null>(null);
   const [picker, setPicker] = useState<'new' | 'apply' | null>(null);
   const [tableDlg, setTableDlg] = useState<{ rows: number; cols: number } | null>(null);
+  const [cropDlg, setCropDlg] = useState<{ l: string; t: string; r: string; b: string } | null>(null);
+  const [chartDlg, setChartDlg] = useState<{ id?: string; type: SlideChartType; title: string; data: string; error?: string } | null>(null);
   const [recent, setRecent] = useState<{ path: string; name: string }[]>([]);
   const [zoom, setZoom] = usePref('slides.zoom', 0); // 0 = fit
   const [notesOpen, setNotesOpen] = usePref('slides.notes', 'on');
@@ -151,6 +153,41 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       return n;
     }),
   }), first);
+
+  // ---- pictures, charts, transitions
+  const image = el?.kind === 'image' ? el : null;
+  const openCrop = () => { if (!image) return; const c = image.crop; const pc = (v: number | undefined) => String(Math.round((v ?? 0) * 100)); setCropDlg({ l: pc(c?.l), t: pc(c?.t), r: pc(c?.r), b: pc(c?.b) }); };
+  const saveCrop = () => {
+    if (!cropDlg || !image) return;
+    const f = (v: string) => Math.max(0, Math.min(90, Number(v.replace(',', '.')) || 0)) / 100;
+    let c = { l: f(cropDlg.l), t: f(cropDlg.t), r: f(cropDlg.r), b: f(cropDlg.b) };
+    if (c.l + c.r > 0.9) c = { ...c, r: 0.9 - c.l }; if (c.t + c.b > 0.9) c = { ...c, b: 0.9 - c.t };
+    const none = !c.l && !c.t && !c.r && !c.b;
+    editEl(image.id, (e) => { const o = { ...(e as ImageEl) }; if (none) delete o.crop; else o.crop = c; return o; }); setCropDlg(null);
+  };
+  const SAMPLE = ',Series 1,Series 2\nNorth,12,9\nSouth,18,14\nEast,7,11\nWest,15,8';
+  const chartText = (c: ChartEl) => [['', ...c.series.map((x) => x.name)], ...c.cats.map((cat, i) => [cat, ...c.series.map((x) => (x.values[i] === null || x.values[i] === undefined ? '' : String(x.values[i])))])].map((r) => r.join(',')).join('\n');
+  const parseChartText = (text: string): { cats: string[]; series: { name: string; values: (number | null)[] }[] } | string => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    if (lines.length < 2) return 'Give a row of series names and at least one row of numbers.';
+    const sepr = lines.some((l) => l.includes('\t')) ? '\t' : lines.some((l) => l.includes(';')) ? ';' : ',';
+    const grid = lines.map((l) => l.split(sepr).map((x) => x.trim()));
+    const names = grid[0].slice(1);
+    if (!names.length) return 'The first row needs the series names after an empty first cell.';
+    const rowsN = grid.slice(1);
+    return { cats: rowsN.map((r) => r[0] ?? ''), series: names.map((name, j) => ({ name: name || `Series ${j + 1}`, values: rowsN.map((r) => { const v = (r[j + 1] ?? '').replace(',', '.'); return v === '' || Number.isNaN(Number(v)) ? null : Number(v); }) })) };
+  };
+  const openChartDlg = (id?: string) => { const c = id ? slide.els.find((e) => e.id === id) : undefined; setChartDlg(c?.kind === 'chart' ? { id, type: c.type, title: c.title, data: chartText(c) } : { type: 'column', title: '', data: SAMPLE }); };
+  const saveChart = () => {
+    if (!chartDlg) return;
+    const d = parseChartText(chartDlg.data);
+    if (typeof d === 'string') { setChartDlg({ ...chartDlg, error: d }); return; }
+    if (chartDlg.id) editEl(chartDlg.id, (e) => ({ ...(e as ChartEl), type: chartDlg.type, title: chartDlg.title, ...d }));
+    else addEl({ id: uid(), kind: 'chart', type: chartDlg.type, title: chartDlg.title, ...d, x: Math.round(deck.w * 0.2), y: Math.round(deck.h * 0.2), w: Math.round(deck.w * 0.6), h: Math.round(deck.h * 0.6) });
+    setChartDlg(null);
+  };
+  const TRANSITIONS: [Transition | undefined, string][] = [[undefined, 'None'], ['fade', 'Fade'], ['push', 'Push'], ['wipe', 'Wipe'], ['zoom', 'Zoom']];
+  const setTrans = (t: Transition | undefined, all = false) => commit((d) => ({ ...d, slides: d.slides.map((x, i) => (all || i === idx ? (() => { const o = { ...x }; if (t) o.trans = t; else delete o.trans; return o; })() : x)) }));
 
   // ---- arrange
   const alignTo = (how: 'left' | 'centre' | 'right' | 'top' | 'middle' | 'bottom') => {
@@ -280,11 +317,12 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
     ] },
     { label: 'Insert', items: [
       { label: 'Text box', run: addText }, { label: 'Shape', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], run: () => addShape(g) })) }, { label: 'Line', run: () => addLine(false) }, { label: 'Arrow', run: () => addLine(true) },
-      { label: 'Table…', run: () => setTableDlg({ rows: 3, cols: 3 }) }, { label: 'Image…', run: () => fileInput.current?.click() }, sep, { label: 'New slide', sub: newItems },
+      { label: 'Table…', run: () => setTableDlg({ rows: 3, cols: 3 }) }, { label: 'Chart…', run: () => openChartDlg() }, { label: 'Image…', run: () => fileInput.current?.click() }, sep, { label: 'New slide', sub: newItems },
     ] },
     { label: 'Slide', items: [
       { label: 'New slide', sub: newItems }, { label: 'Layout', sub: layoutItems }, { label: 'Choose a layout…', run: () => setPicker('apply') }, { label: 'Duplicate slide', run: dupSlide }, { label: 'Delete slide', run: delSlide }, sep,
       { label: 'Move up', disabled: idx === 0, run: () => moveSlide(idx, idx - 1) }, { label: 'Move down', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, idx + 1) }, sep,
+      { label: 'Transition', sub: [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply this one to every slide', run: () => setTrans(slide.trans, true) }] },
       { label: 'Design', sub: DESIGNS.map((g) => ({ label: g.name, run: () => applyDesign(g) })) },
       { label: 'Background colour', sub: [...BG.map(([l, c]): MenuItem => ({ label: l, check: (slide.bg ?? null) === c, run: () => editSlide((s) => ({ ...s, bg: c ?? undefined })) })), { label: 'Use on every slide', run: () => commit((d) => ({ ...d, slides: d.slides.map((s) => ({ ...s, bg: slide.bg })) })) }] },
       { label: 'Slide size', sub: [{ label: 'Widescreen 16:9', check: Math.round((deck.w / deck.h) * 100) === 178, run: () => resizeDeck(1280, 720) }, { label: 'Standard 4:3', check: Math.round((deck.w / deck.h) * 100) === 133, run: () => resizeDeck(960, 720) }] },
@@ -295,6 +333,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       { label: 'Line spacing', sub: LINE_SPACING.map(([l, v]): MenuItem => ({ label: l, run: () => setSpacing(v) })) }, sep,
       { label: 'Text position', disabled: textEls.length === 0, sub: (['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: v[0].toUpperCase() + v.slice(1), check: el?.kind === 'text' && (el.valign ?? 'top') === v, run: () => editSel((e) => (e.kind === 'text' ? { ...e, valign: v } : e)) })) },
       { label: 'Shape', disabled: !el || el.kind !== 'text', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], check: el?.kind === 'text' && (el.geometry ?? 'rect') === g, run: () => editSel((e) => (e.kind === 'text' ? { ...e, geometry: g === 'rect' ? undefined : g } : e)) })) },
+      { label: 'Crop picture…', disabled: !image, run: openCrop }, { label: 'Edit chart…', disabled: el?.kind !== 'chart', run: () => el && openChartDlg(el.id) },
       { label: 'Dashed line', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.dash), run: () => patchLines({ dash: !lineEls.every((l) => l.dash) || undefined }) },
       { label: 'Arrow at the start', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.head), run: () => patchLines({ head: !lineEls.every((l) => l.head) || undefined }) },
       { label: 'Arrow at the end', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.tail), run: () => patchLines({ tail: !lineEls.every((l) => l.tail) || undefined }) },
@@ -310,6 +349,8 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       { label: 'Insert row above', run: () => tableEdit((t) => insertRow(t, activeCell?.r ?? 0)) }, { label: 'Insert row below', run: () => tableEdit((t) => insertRow(t, (activeCell?.r ?? t.rows.length - 1) + 1)) },
       { label: 'Insert column left', run: () => tableEdit((t) => insertCol(t, activeCell?.c ?? 0)) }, { label: 'Insert column right', run: () => tableEdit((t) => insertCol(t, (activeCell?.c ?? t.cols.length - 1) + 1)) }, sep,
       { label: 'Delete row', run: () => tableEdit((t) => deleteRow(t, activeCell?.r ?? t.rows.length - 1)) }, { label: 'Delete column', run: () => tableEdit((t) => deleteCol(t, activeCell?.c ?? t.cols.length - 1)) }, sep,
+      { label: 'Merge with the cell to the right', disabled: !activeCell, run: () => activeCell && tableEdit((t) => mergeNext(t, activeCell.r, activeCell.c, 'right')) }, { label: 'Merge with the cell below', disabled: !activeCell, run: () => activeCell && tableEdit((t) => mergeNext(t, activeCell.r, activeCell.c, 'down')) },
+      { label: 'Unmerge cells', disabled: !activeCell || !mergeOf(table, activeCell.r, activeCell.c), run: () => activeCell && tableEdit((t) => unmerge(t, activeCell.r, activeCell.c)) }, sep,
       { label: 'Header row', check: table.header, run: () => tableEdit((t) => ({ ...t, header: !t.header })) }, { label: 'Banded rows', check: table.banded, run: () => tableEdit((t) => ({ ...t, banded: !t.banded })) },
     ] } as MenuDef] : []),
   ];
@@ -347,6 +388,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
         <Btn label="Line" onClick={() => addLine(false)}><Minus size={16} /></Btn>
         <Btn label="Arrow" onClick={() => addLine(true)}><MoveRight size={16} /></Btn>
         <Btn label="Table" onClick={() => setTableDlg({ rows: 3, cols: 3 })}><Table2 size={16} /></Btn>
+        <Btn label="Chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>
         <Btn label="Image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
         <Sep />
         <FontBox value={fontNow} onPick={(f) => formatRuns({ font: f })} />
@@ -395,7 +437,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
         <div className="flex min-w-0 flex-1 flex-col">
           <div ref={stage} className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-raised p-6">
             <div key={slide.id} className="tk-swap">
-              <SlideCanvas slide={slide} deck={deck} scale={scale} selected={selected} editing={editing} cell={cell} editCell={editCell} onSelect={(ids) => setSelected(ids)} onEdit={setEditing} onPatch={onPatch} editRef={editRef}
+              <SlideCanvas onEditChart={openChartDlg} slide={slide} deck={deck} scale={scale} selected={selected} editing={editing} cell={cell} editCell={editCell} onSelect={(ids) => setSelected(ids)} onEdit={setEditing} onPatch={onPatch} editRef={editRef}
                 onText={(id, paras) => { setEditing(null); editEl(id, (e) => ({ ...e, paras }) as TextEl); }}
                 onCell={setCell_} onEditCell={setEditCell}
                 onCommitCell={(c, text, next) => {
@@ -423,6 +465,25 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
                 <span className="text-xs">{l.label}</span>
               </button>
             ))}
+          </div>
+        </Dialog>
+      )}
+      {cropDlg && (
+        <Dialog title="Crop picture" onClose={() => setCropDlg(null)} footer={<><button className="btn mr-auto" onClick={() => setCropDlg({ l: '0', t: '0', r: '0', b: '0' })}>Reset</button><button className="btn" onClick={() => setCropDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveCrop}>Crop</button></>}>
+          <p className="mb-2 text-sm text-muted">How much to cut off each side, in percent of the picture.</p>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {([['l', 'Left'], ['t', 'Top'], ['r', 'Right'], ['b', 'Bottom']] as const).map(([k, l]) => <label key={k} className="grid gap-1">{l}<input aria-label={`Crop ${l.toLowerCase()}`} className="input" inputMode="decimal" value={cropDlg[k]} onChange={(e) => setCropDlg({ ...cropDlg, [k]: e.target.value })} /></label>)}
+          </div>
+        </Dialog>
+      )}
+      {chartDlg && (
+        <Dialog title={chartDlg.id ? 'Edit chart' : 'Insert chart'} wide onClose={() => setChartDlg(null)} footer={<><button className="btn" onClick={() => setChartDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveChart}>{chartDlg.id ? 'Update' : 'Insert'}</button></>}>
+          <div className="grid gap-3 text-sm">
+            <div className="flex gap-3"><label className="grid flex-1 gap-1">Chart type<select aria-label="Chart type" className="input" value={chartDlg.type} onChange={(e) => setChartDlg({ ...chartDlg, type: e.target.value as SlideChartType })}>{([['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['area', 'Area'], ['pie', 'Pie']] as const).map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select></label>
+              <label className="grid flex-[2] gap-1">Title<input aria-label="Chart title" className="input" value={chartDlg.title} onChange={(e) => setChartDlg({ ...chartDlg, title: e.target.value })} /></label></div>
+            <label className="grid gap-1">Numbers (first row: series names; first column: labels; separated by commas, semicolons or tabs, so you can paste from a spreadsheet)
+              <textarea aria-label="Chart data" className="input font-mono" rows={8} value={chartDlg.data} onChange={(e) => setChartDlg({ ...chartDlg, data: e.target.value, error: undefined })} /></label>
+            {chartDlg.error && <p role="alert" className="text-bad">{chartDlg.error}</p>}
           </div>
         </Dialog>
       )}

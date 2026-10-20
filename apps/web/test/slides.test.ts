@@ -143,3 +143,60 @@ describe('new things survive a save and a reload', () => {
     expect(l.rot).toBeCloseTo(10, 0); expect(l.paras.map((p) => [p.num, p.lh])).toEqual([[true, 1.5], [true, 1.5]]);
   });
 });
+
+import { isCovered, mergeNext, mergeOf, unmerge } from '../src/slides/tableOps.ts';
+import type { ChartEl, ImageEl } from '../src/slides/model.ts';
+
+describe('merged table cells', () => {
+  it('join and split cells and follow inserted and deleted rows and columns', () => {
+    let t = newTable({ x: 0, y: 0, w: 300 }, 3, 3);
+    t = setCell(setCell(t, 0, 0, { t: 'A' }), 0, 1, { t: 'B' });
+    t = mergeNext(t, 0, 0, 'right');
+    expect(t.merges).toEqual([{ r: 0, c: 0, rs: 1, cs: 2 }]); expect(t.cells[0][0].t).toBe('A B'); expect(t.cells[0][1].t).toBe('');
+    expect([isCovered(t, 0, 1), isCovered(t, 0, 0), mergeOf(t, 0, 1)?.c]).toEqual([true, false, 0]);
+    t = mergeNext(t, 0, 0, 'down'); expect(t.merges).toEqual([{ r: 0, c: 0, rs: 2, cs: 2 }]);
+    expect(mergeNext(newTable({ x: 0, y: 0, w: 100 }, 1, 1), 0, 0, 'right').merges).toBeUndefined();
+    expect(insertCol(t, 1).merges).toEqual([{ r: 0, c: 0, rs: 2, cs: 3 }]); expect(insertCol(t, 2).merges).toEqual([{ r: 0, c: 0, rs: 2, cs: 2 }]);
+    expect(insertRow(t, 0).merges).toEqual([{ r: 1, c: 0, rs: 2, cs: 2 }]);
+    expect(deleteCol(t, 1).merges).toEqual([{ r: 0, c: 0, rs: 2, cs: 1 }]); expect(deleteRow(deleteRow(t, 0), 0).merges).toBeUndefined();
+    expect(unmerge(t, 1, 1).merges).toBeUndefined();
+  });
+});
+
+describe('transitions, crops, merges and charts survive a save', () => {
+  it('in a .pptx', async () => {
+    const deck = newDeck();
+    const png = 'data:image/png;base64,' + readFileSync(join(import.meta.dirname, 'fixtures', 'pic.png')).toString('base64');
+    const img: ImageEl = { id: 'i', kind: 'image', src: png, x: 40, y: 40, w: 300, h: 200, crop: { l: 0.1, t: 0.2, r: 0.3, b: 0 } };
+    const plain: ImageEl = { id: 'j', kind: 'image', src: png, x: 400, y: 40, w: 100, h: 100 };
+    let tb = newTable({ x: 40, y: 300, w: 600 }, 3, 3); tb = mergeNext(setCell(tb, 0, 0, { t: 'Wide' }), 0, 0, 'right'); tb = mergeNext(tb, 1, 2, 'down');
+    const chart: ChartEl = { id: 'c', kind: 'chart', type: 'column', title: 'Sales', cats: ['N', 'S', 'E'], series: [{ name: 'Q1', values: [1, 2, null] }, { name: 'Q2', values: [4, 5, 6] }], x: 700, y: 300, w: 500, h: 350 };
+    const pie: ChartEl = { ...chart, id: 'p', type: 'pie', title: '', x: 700, y: 20, w: 300, h: 250 };
+    deck.slides[0].els = [img, plain, tb, chart, pie]; deck.slides[0].trans = 'push';
+    const second = slideFromLayout(layoutById('blank'), D); second.trans = 'zoom'; deck.slides.push(second, slideFromLayout(layoutById('blank'), D));
+    const { deck: again, warnings } = await importPptx(await exportPptx(deck));
+    expect(warnings).toEqual([]);
+    expect(again.slides.map((s) => s.trans)).toEqual(['push', 'zoom', undefined]);
+    const [i1, i2] = again.slides[0].els.filter((e): e is ImageEl => e.kind === 'image');
+    expect(i1.crop!.l).toBeCloseTo(0.1, 3); expect(i1.crop!.t).toBeCloseTo(0.2, 3); expect(i1.crop!.r).toBeCloseTo(0.3, 3); expect(i2.crop).toBeUndefined();
+    const t = again.slides[0].els.find((e): e is TableEl => e.kind === 'table')!;
+    expect(t.merges).toEqual([{ r: 0, c: 0, rs: 1, cs: 2 }, { r: 1, c: 2, rs: 2, cs: 1 }]); expect(t.cells[0][0].t).toBe('Wide');
+    const cs = again.slides[0].els.filter((e): e is ChartEl => e.kind === 'chart');
+    expect(cs.map((c) => [c.type, c.title, c.cats])).toEqual([['column', 'Sales', ['N', 'S', 'E']], ['pie', '', ['N', 'S', 'E']]]);
+    expect(cs[0].series).toEqual([{ name: 'Q1', values: [1, 2, 0] }, { name: 'Q2', values: [4, 5, 6] }]); // the file stores a missing number as 0
+    expect(Math.abs(cs[0].w - 500)).toBeLessThan(1.5);
+  });
+});
+
+describe('reading charts and merged cells written by python-pptx', () => {
+  it('shows column and pie charts with their numbers, names the radar chart it cannot show, keeps the merge', async () => {
+    const { deck, warnings } = await importPptx(fixture('python-pptx-chart.pptx'));
+    expect(warnings).toEqual(['A radar chart is not shown (only column, bar, line, area and pie charts are).']);
+    const cs = deck.slides[0].els.filter((e): e is ChartEl => e.kind === 'chart');
+    expect(cs.map((c) => [c.type, c.title, c.cats])).toEqual([['column', 'Revenue', ['Q1', 'Q2', 'Q3']], ['pie', '', ['A', 'B']]]);
+    expect(cs[0].series).toEqual([{ name: 'Sales', values: [19.2, 21.4, 16.7] }, { name: 'Costs', values: [10, 12, 9] }]);
+    expect(Math.round(cs[0].w)).toBe(576);
+    const t = deck.slides[0].els.find((e): e is TableEl => e.kind === 'table')!;
+    expect(t.merges).toEqual([{ r: 0, c: 0, rs: 1, cs: 2 }]); expect(t.cells[0][0].t).toBe('Merged');
+  });
+});
