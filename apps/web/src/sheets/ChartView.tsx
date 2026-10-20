@@ -17,6 +17,10 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
   const left = horizontal ? Math.min(150, 14 + Math.max(0, ...data.cats.map((c) => c.length)) * 6.5) : 14 + Math.max(...axis.ticks.map((t) => shortNumber(t).length), 1) * 7;
   const plot = { x: left, y: top, w: Math.max(20, w - left - 14), h: Math.max(20, h - top - bottom - (horizontal ? 18 : 22)) };
   const n = data.cats.length || 1;
+  const scatter = type === 'scatter';
+  const xs = data.cats.map((c, i) => { const v = Number(c); return c.trim() !== '' && Number.isFinite(v) ? v : i + 1; });
+  const xAxis = niceAxis(Math.min(...xs, 0 + (xs.length ? Math.min(...xs) : 0)), Math.max(...xs, 1));
+  const xPos = (v: number) => plot.x + ((v - xAxis.lo) / (xAxis.hi - xAxis.lo)) * plot.w;
   const scaleV = (v: number) => (horizontal ? plot.x + ((v - axis.lo) / (axis.hi - axis.lo)) * plot.w : plot.y + plot.h - ((v - axis.lo) / (axis.hi - axis.lo)) * plot.h);
   const empty = data.series.length === 0 || (pie ? false : all.length === 0);
   return (
@@ -30,7 +34,8 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
           {axis.ticks.map((t) => (horizontal
             ? <g key={t}><line x1={scaleV(t)} x2={scaleV(t)} y1={plot.y} y2={plot.y + plot.h} stroke={LINE} /><text x={scaleV(t)} y={plot.y + plot.h + 15} textAnchor="middle" fill={MUTED}>{shortNumber(t)}</text></g>
             : <g key={t}><line x1={plot.x} x2={plot.x + plot.w} y1={scaleV(t)} y2={scaleV(t)} stroke={LINE} /><text x={plot.x - 6} y={scaleV(t) + 4} textAnchor="end" fill={MUTED}>{shortNumber(t)}</text></g>))}
-          {data.cats.map((c, i) => {
+          {scatter && xAxis.ticks.map((t) => <g key={`x${t}`}><line x1={xPos(t)} x2={xPos(t)} y1={plot.y} y2={plot.y + plot.h} stroke={LINE} /><text x={xPos(t)} y={plot.y + plot.h + 15} textAnchor="middle" fill={MUTED}>{shortNumber(t)}</text></g>)}
+          {!scatter && data.cats.map((c, i) => {
             const mid = (i + 0.5) / n;
             return horizontal
               ? <text key={i} x={plot.x - 6} y={plot.y + mid * plot.h + 4} textAnchor="end" fill={MUTED}>{trim(c, 22)}</text>
@@ -44,6 +49,13 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
               ? <rect key={`${si}-${i}`} x={Math.min(base, at)} y={plot.y + start} width={Math.abs(at - base)} height={bw} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}, ${data.cats[i]}: ${v}`}</title></rect>
               : <rect key={`${si}-${i}`} x={plot.x + start} y={Math.min(base, at)} width={bw} height={Math.abs(at - base)} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}, ${data.cats[i]}: ${v}`}</title></rect>;
           }))}
+          {scatter && data.series.map((s, si) => s.values.map((v, i) => v === null ? null : <circle key={`${si}-${i}`} cx={xPos(xs[i])} cy={scaleV(v)} r={4.5} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}: (${xs[i]}, ${v})`}</title></circle>))}
+          {type === 'area' && data.series.map((s, si) => {
+            const pts = s.values.map((v, i) => [plot.x + ((i + 0.5) / n) * plot.w, scaleV(v ?? 0)] as const);
+            if (!pts.length) return null;
+            const base = scaleV(Math.max(axis.lo, Math.min(0, axis.hi))), color = PALETTE[si % PALETTE.length];
+            return <g key={si}><polygon points={`${pts[0][0]},${base} ${pts.map((p) => p.join(',')).join(' ')} ${pts[pts.length - 1][0]},${base}`} fill={color} fillOpacity={0.4} /><polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" /></g>;
+          })}
           {type === 'line' && data.series.map((s, si) => {
             const pts = s.values.map((v, i) => (v === null ? null : [plot.x + ((i + 0.5) / n) * plot.w, scaleV(v)] as const));
             const color = PALETTE[si % PALETTE.length];

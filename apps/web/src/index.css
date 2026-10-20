@@ -117,6 +117,8 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .sheet-chart { position: absolute; z-index: 2; border: 1px solid hsl(var(--line)); box-shadow: 0 1px 6px hsl(0 0% 0% / 0.18); background: hsl(var(--bg)); cursor: move; overflow: hidden; }
 .sheet-chart.sel { outline: 2px solid hsl(var(--accent)); }
 .sheet-chart-grip { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; background: hsl(var(--accent)); cursor: nwse-resize; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.sheet-filter-btn { position: absolute; right: 1px; top: 2px; width: 16px; height: 18px; line-height: 18px; text-align: center; font-size: 11px; border: 1px solid hsl(var(--line)); border-radius: 3px; background: hsl(var(--raised)); color: hsl(var(--fg)); cursor: pointer; z-index: 1; }
+.sheet-filter-btn.on { background: hsl(var(--accent)); color: #fff; }
 .sheet-fill { position: absolute; width: 8px; height: 8px; background: hsl(var(--accent)); border: 1px solid hsl(var(--bg)); box-sizing: border-box; cursor: crosshair; z-index: 3; }
 .sheet-fillto { position: absolute; pointer-events: none; border: 2px dashed hsl(var(--accent)); box-sizing: border-box; z-index: 2; }
 .sheet-hit { background-image: linear-gradient(hsl(48 95% 60% / 0.35), hsl(48 95% 60% / 0.35)); }

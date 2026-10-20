@@ -1,28 +1,28 @@
-import { isNumeric, key, numberOf, unkey, type Borders, type Cell, type CellFmt, type CellValue, type Edge, type Range, type Sheet } from './model.ts';
+import { isEmptyCell, isNumeric, key, numberOf, unkey, type Borders, type Cell, type CellFmt, type CellValue, type Edge, type Range, type Sheet } from './model.ts';
 import { isDateCode } from './format.ts';
 import { shiftCharts } from './charts.ts';
 
 /** Pure edits of a sheet: each returns a new sheet and leaves the old one alone (that is what undo keeps). */
 const copy = (s: Sheet): Sheet => ({ ...s, cells: { ...s.cells }, colW: { ...s.colW }, rowH: { ...s.rowH }, merges: s.merges.map((m) => ({ ...m })) });
 const each = (g: Range, f: (r: number, c: number) => void) => { for (let r = g.r1; r <= g.r2; r++) for (let c = g.c1; c <= g.c2; c++) f(r, c); };
-const drop = (s: Sheet, k: string) => { const c = s.cells[k]; if (c && c.v === null && !c.s && c.f === undefined) delete s.cells[k]; };
+const drop = (s: Sheet, k: string) => { const c = s.cells[k]; if (c && isEmptyCell(c)) delete s.cells[k]; };
 
 export function setValue(s: Sheet, r: number, c: number, v: CellValue, extra?: { f?: string; nf?: string }): Sheet {
   const o = copy(s), k = key(r, c), prev = o.cells[k];
-  const cell: Cell = { v, ...(prev?.s ? { s: prev.s } : {}) };
+  const cell: Cell = { v, ...(prev?.s ? { s: prev.s } : {}), ...(prev?.link ? { link: prev.link } : {}) };
   if (extra?.f !== undefined) cell.f = extra.f;
   if (extra?.nf && !cell.s?.nf) cell.s = { ...cell.s, nf: extra.nf };
-  if (v === null && cell.f === undefined && !cell.s) delete o.cells[k]; else o.cells[k] = cell;
+  if (isEmptyCell(cell)) delete o.cells[k]; else o.cells[k] = cell;
   return o;
 }
 export function setMany(s: Sheet, at: { r: number; c: number }, rows: Cell[][]): Sheet {
   const o = copy(s);
-  rows.forEach((row, i) => row.forEach((cell, j) => { const k = key(at.r + i, at.c + j); if (cell.v === null && !cell.s && cell.f === undefined) delete o.cells[k]; else o.cells[k] = { ...cell }; }));
+  rows.forEach((row, i) => row.forEach((cell, j) => { const k = key(at.r + i, at.c + j); if (isEmptyCell(cell)) delete o.cells[k]; else o.cells[k] = { ...cell }; }));
   return o;
 }
 export function clearRange(s: Sheet, g: Range, withFormat = false): Sheet {
   const o = copy(s);
-  each(g, (r, c) => { const k = key(r, c), cell = o.cells[k]; if (!cell) return; if (withFormat) delete o.cells[k]; else { o.cells[k] = { v: null, ...(cell.s ? { s: cell.s } : {}) }; drop(o, k); } });
+  each(g, (r, c) => { const k = key(r, c), cell = o.cells[k]; if (!cell) return; if (withFormat) delete o.cells[k]; else { o.cells[k] = { v: null, ...(cell.s ? { s: cell.s } : {}), ...(cell.link ? { link: cell.link } : {}) }; drop(o, k); } });
   return o;
 }
 export function formatRange(s: Sheet, g: Range, patch: Partial<CellFmt>): Sheet {
@@ -33,7 +33,7 @@ export function formatRange(s: Sheet, g: Range, patch: Partial<CellFmt>): Sheet 
     for (const p of Object.keys(merged) as (keyof CellFmt)[]) if (merged[p] === undefined || merged[p] === false || merged[p] === null) delete merged[p];
     const next: Cell = { ...cell, ...(Object.keys(merged).length ? { s: merged } : {}) };
     if (!Object.keys(merged).length) delete next.s;
-    if (next.v === null && !next.s && next.f === undefined) delete o.cells[k]; else o.cells[k] = next;
+    if (isEmptyCell(next)) delete o.cells[k]; else o.cells[k] = next;
   });
   return o;
 }
@@ -175,7 +175,7 @@ export function setBorders(s: Sheet, g: Range, mode: BorderMode, edge: Edge): Sh
     if (bd === cell.s?.bd) return;
     const fmt: CellFmt = { ...cell.s }; if (bd) fmt.bd = bd; else delete fmt.bd;
     const next: Cell = { ...cell, ...(Object.keys(fmt).length ? { s: fmt } : {}) }; if (!Object.keys(fmt).length) delete next.s;
-    if (next.v === null && !next.s && next.f === undefined) delete o.cells[k]; else o.cells[k] = next;
+    if (isEmptyCell(next)) delete o.cells[k]; else o.cells[k] = next;
   });
   return o;
 }
@@ -208,10 +208,32 @@ export function autofill(s: Sheet, src: Range, to: Range): Sheet {
       const base = cells[i];
       if (!base) { delete o.cells[dst]; continue; }
       let cell: Cell = { ...base };
+      if (base.f !== undefined) { const [br, bc] = unkey(at(i)), [tr, tc] = unkey(dst); cell = { ...base, f: shiftFormula(base.f, tr - br, tc - bc) }; }
       if (even && step !== 0) cell = { ...base, v: forward ? nums[len - 1]! + step * k : nums[0]! - step * k };
       else if (textSeries && tstep !== 0) { const m = tails[forward ? len - 1 : 0]!; const n = Number(m[2]) + (forward ? tstep * k : -tstep * k); const w = m[2].length; cell = { ...base, v: `${m[1]}${n < 0 ? Math.abs(n) : String(n).padStart(m[2].startsWith('0') ? w : 0, '0')}` }; }
       o.cells[dst] = cell;
     }
   }
   return o;
+}
+
+/** A link (or none) on every cell of a range; an empty cell gets the address as its text. */
+export function setLink(s: Sheet, g: Range, url: string | undefined): Sheet {
+  const o = copy(s);
+  each(g, (r, c) => {
+    const k = key(r, c), cell = o.cells[k] ?? { v: null };
+    const next: Cell = { ...cell }; if (url) { next.link = url; if (next.v === null && next.f === undefined) next.v = url; } else delete next.link;
+    if (isEmptyCell(next)) delete o.cells[k]; else o.cells[k] = next;
+  });
+  return o;
+}
+
+/** A formula as it reads one cell (or `dr` rows and `dc` columns) further on: relative references move, $-fixed ones stay (what filling and pasting do). */
+export function shiftFormula(f: string, dr: number, dc: number): string {
+  const colNum = (n: string) => { let x = 0; for (const ch of n) x = x * 26 + ch.charCodeAt(0) - 64; return x; };
+  const colAt = (x: number) => { let o = ''; for (let n = x; n > 0; n = Math.floor((n - 1) / 26)) o = String.fromCharCode(65 + ((n - 1) % 26)) + o; return o; };
+  return f.split(/("(?:[^"]|"")*")/).map((part, i) => (i % 2 ? part : part.replace(/(^|[^A-Za-z0-9_.$])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g, (m, pre: string, ca: string, col: string, ra: string, row: string) => {
+    const c = ca ? colNum(col) : colNum(col) + dc, r = ra ? Number(row) : Number(row) + dr;
+    return c < 1 || r < 1 || c > 16384 || r > 1048576 ? `${pre}#REF!` : `${pre}${ca}${colAt(c)}${ra}${r}`;
+  }))).join('');
 }

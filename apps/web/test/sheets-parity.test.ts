@@ -3,7 +3,7 @@ import { exportXlsx, importXlsx } from '../src/sheets/xlsx.ts';
 import { autofill, formatRange, setBorders, setValue } from '../src/sheets/ops.ts';
 import { changeDecimals, formatCell } from '../src/sheets/format.ts';
 import { findAll, replacedText } from '../src/sheets/find.ts';
-import { emptySheet, key, type Edge, type Sheet } from '../src/sheets/model.ts';
+import { colName, emptySheet, key, type Edge, type Sheet } from '../src/sheets/model.ts';
 
 const grid = (rows: (string | number | null)[][]): Sheet => { let s = emptySheet('S'); rows.forEach((r, i) => r.forEach((v, j) => { if (v !== null) s = setValue(s, i, j, v); })); return s; };
 const line: Edge = { st: 'thin', c: '#000000' };
@@ -140,3 +140,73 @@ describe('charts', () => {
     expect(chartData(book.sheets[0], cs[0]).series.map((s) => s.values)).toEqual([[10, 14, 9, 18], [7, 9, 12, 15]]);
   });
 });
+
+import { cfEvaluator, columnValues, hiddenRows, validate } from '../src/sheets/rules.ts';
+import { setLink, shiftFormula } from '../src/sheets/ops.ts';
+
+describe('formulas that move', () => {
+  it('shift relative references and keep fixed ones', () => {
+    expect(shiftFormula('A1+B$2*$C3', 1, 2)).toBe('C2+D$2*$C4');
+    expect(shiftFormula('SUM(A1:A5)', 0, 1)).toBe('SUM(B1:B5)');
+    expect(shiftFormula('"A1"&LOG10(B2)&Sheet2!C3', 2, 0)).toBe('"A1"&LOG10(B4)&Sheet2!C5');
+    expect(shiftFormula('A1', -1, 0)).toBe('#REF!');
+    expect(autofill(setValue(setValue(emptySheet('S'), 0, 1, null, { f: 'A1*2' }), 0, 0, 5), { r1: 0, c1: 1, r2: 0, c2: 1 }, { r1: 0, c1: 1, r2: 2, c2: 1 }).cells[key(2, 1)].f).toBe('A3*2');
+  });
+});
+describe('links, rules and filters', () => {
+  it('keep a link when the text changes and when values are cleared', () => {
+    let s = setLink(setValue(emptySheet('S'), 0, 0, 'Ann'), { r1: 0, c1: 0, r2: 0, c2: 0 }, 'https://a.example');
+    s = setValue(s, 0, 0, 'Anna'); expect(s.cells[key(0, 0)]).toEqual({ v: 'Anna', link: 'https://a.example' });
+    expect(setLink(s, { r1: 0, c1: 0, r2: 0, c2: 0 }, undefined).cells[key(0, 0)]).toEqual({ v: 'Anna' });
+    expect(setLink(emptySheet('S'), { r1: 1, c1: 1, r2: 1, c2: 1 }, 'mailto:x@y.z').cells[key(1, 1)]).toEqual({ v: 'mailto:x@y.z', link: 'mailto:x@y.z' });
+  });
+  it('colour cells by rule, first match wins, scales span the range', () => {
+    const s: Sheet = { ...grid([[5, 1], [12, 3], ['Bob', 5]]), cf: [
+      { id: 'a', range: { r1: 0, c1: 0, r2: 2, c2: 0 }, kind: 'gt', v1: '10', fill: '#ff0000' }, { id: 'b', range: { r1: 0, c1: 0, r2: 2, c2: 0 }, kind: 'text', v1: 'BO', fill: '#00ff00' },
+      { id: 'c', range: { r1: 0, c1: 1, r2: 2, c2: 1 }, kind: 'scale', lo: '#000000', hi: '#ffffff' }] };
+    const ev = cfEvaluator(s)!;
+    expect([ev(0, 0), ev(1, 0), ev(2, 0)]).toEqual([undefined, { fill: '#ff0000' }, { fill: '#00ff00' }]);
+    expect([ev(0, 1)?.fill, ev(1, 1)?.fill, ev(2, 1)?.fill]).toEqual(['#000000', '#808080', '#ffffff']);
+    expect(cfEvaluator(grid([[1]]))).toBeNull();
+  });
+  it('refuse what a validation does not allow', () => {
+    const s: Sheet = { ...grid([['x', 'y']]), dv: [{ range: { r1: 0, c1: 2, r2: 5, c2: 2 }, kind: 'list', items: ['red', 'Green'], blank: true }, { range: { r1: 0, c1: 3, r2: 5, c2: 3 }, kind: 'whole', min: 1, max: 10, blank: false }, { range: { r1: 0, c1: 4, r2: 5, c2: 4 }, kind: 'list', source: 'A1:B1', blank: true }] };
+    expect([validate(s, 1, 2, 'RED'), validate(s, 1, 2, ''), validate(s, 1, 2, 'blue')?.slice(0, 11)]).toEqual([null, null, 'Pick one of']);
+    expect([validate(s, 0, 3, '5'), validate(s, 0, 3, '11') !== null, validate(s, 0, 3, '2.5') !== null, validate(s, 0, 3, '') !== null, validate(s, 0, 9, 'anything')]).toEqual([null, true, true, true, null]);
+    expect([validate(s, 0, 4, 'y'), validate(s, 0, 4, 'z') !== null]).toEqual([null, true]);
+  });
+  it('hide the rows a filter does not show', () => {
+    const s: Sheet = { ...grid([['Name', 'Qty'], ['Ann', 5], ['Bob', 12], ['Cy', 5]]), filter: { range: { r1: 0, c1: 0, r2: 3, c2: 1 }, show: { 1: ['5'] } } };
+    expect([...hiddenRows(s)]).toEqual([2]);
+    expect(columnValues(s, s.filter!, 1)).toEqual([{ text: '5', n: 2 }, { text: '12', n: 1 }]);
+    expect(hiddenRows({ ...s, filter: { ...s.filter!, show: {} } }).size).toBe(0);
+  });
+  it('survive a save: links, rules, validation, filter, area and scatter charts', async () => {
+    const base = grid([['Name', 'Qty'], ['Ann', 5], ['Bob', 12], ['Cy', 5]]);
+    const s: Sheet = { ...setLink(base, { r1: 1, c1: 0, r2: 1, c2: 0 }, 'https://a.example/?q=1&r=2'), name: 'Rules',
+      cf: [{ id: 'a', range: { r1: 1, c1: 1, r2: 3, c2: 1 }, kind: 'between', v1: '5', v2: '9', fill: '#ffd6d6', color: '#9c0006', bold: true }, { id: 'b', range: { r1: 1, c1: 0, r2: 3, c2: 0 }, kind: 'text', v1: 'an', fill: '#00ff00' }, { id: 'c', range: { r1: 1, c1: 1, r2: 3, c2: 1 }, kind: 'scale', lo: '#ffffff', hi: '#63be7b' }, { id: 'd', range: { r1: 1, c1: 0, r2: 3, c2: 0 }, kind: 'eq', v1: 'Bob', fill: '#aaaaaa' }],
+      dv: [{ range: { r1: 1, c1: 3, r2: 3, c2: 3 }, kind: 'list', items: ['a', 'b, c'.split(',')[0]], blank: true }, { range: { r1: 1, c1: 1, r2: 3, c2: 1 }, kind: 'whole', min: 1, max: 100, blank: false, message: 'Whole numbers 1 to 100' }, { range: { r1: 1, c1: 4, r2: 3, c2: 4 }, kind: 'list', source: 'A2:A4', blank: true }],
+      filter: { range: { r1: 0, c1: 0, r2: 3, c2: 1 }, show: { 1: ['5'] } },
+      charts: [{ id: 'x', type: 'area', title: 'A', range: { r1: 0, c1: 0, r2: 3, c2: 1 }, header: true, labels: true, x: 400, y: 10, w: 300, h: 200 }, { id: 'y', type: 'scatter', title: 'S', range: { r1: 0, c1: 1, r2: 3, c2: 1 }, header: true, labels: false, x: 400, y: 240, w: 300, h: 200 }] };
+    const { book, warnings } = await importXlsx(await exportXlsx({ sheets: [s], active: 0 }));
+    expect(warnings).toEqual([]);
+    const got = book.sheets[0];
+    expect(got.cells[key(1, 0)].link).toBe('https://a.example/?q=1&r=2');
+    expect(got.cf!.map((r) => [r.kind, r.v1, r.v2, r.fill, r.color, r.bold, r.lo, r.hi])).toEqual([['between', '5', '9', '#ffd6d6', '#9c0006', true, undefined, undefined], ['text', 'an', undefined, '#00ff00', undefined, undefined, undefined, undefined], ['scale', undefined, undefined, undefined, undefined, undefined, '#ffffff', '#63be7b'], ['eq', 'Bob', undefined, '#aaaaaa', undefined, undefined, undefined, undefined]]);
+    expect(got.dv!.map((v) => [v.kind, v.items, v.source, v.min, v.max, v.blank, v.message])).toEqual([['list', ['a', 'b'], undefined, undefined, undefined, true, undefined], ['whole', undefined, undefined, 1, 100, false, 'Whole numbers 1 to 100'], ['list', undefined, 'A2:A4', undefined, undefined, true, undefined]]);
+    expect(got.filter).toEqual({ range: { r1: 0, c1: 0, r2: 3, c2: 1 }, show: { 1: ['5'] } });
+    expect(got.charts!.map((c) => c.type)).toEqual(['area', 'scatter']);
+  });
+  it('are read from a workbook written by openpyxl', async () => {
+    const { book, warnings } = await importXlsx(new Uint8Array(readFileSync(join(import.meta.dirname, 'fixtures', 'openpyxl-rules.xlsx'))));
+    expect(warnings).toEqual([]);
+    const s = book.sheets[0];
+    expect([s.cells[key(1, 0)].link, s.cells[key(2, 0)].link]).toEqual(['https://example.com/ann', 'mailto:bob@example.com']);
+    expect(s.cf!.map((r) => [r.kind, rangeOf(r.range), r.v1, r.v2, r.fill, r.bold])).toEqual([['gt', 'B2:B5', '10', undefined, '#ffc7ce', true], ['scale', 'C2:C5', undefined, undefined, undefined, undefined], ['between', 'A2:A5', 'A', 'C', '#dddddd', undefined]]);
+    expect(s.dv!.map((v) => [v.kind, v.items, v.min, v.max, v.blank, rangeOf(v.range)])).toEqual([['list', ['red', 'green', 'blue'], undefined, undefined, true, 'E2:E5'], ['whole', undefined, 1, 100, false, 'B2:B5']]);
+    expect(s.filter).toEqual({ range: { r1: 0, c1: 0, r2: 4, c2: 2 }, show: { 1: ['5', '8'] } });
+    expect(s.charts!.map((c) => [c.type, c.header, c.labels])).toEqual([['area', true, true], ['scatter', true, true]]);
+    expect(chartData(s, s.charts![1]).series[0].values).toEqual([1.5, 2.5, 3, 4]);
+  });
+});
+const rangeOf = (g: { r1: number; c1: number; r2: number; c2: number }) => `${colName(g.c1)}${g.r1 + 1}:${colName(g.c2)}${g.r2 + 1}`;

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowDownAZ, ArrowUpAZ, Baseline, Bold, DollarSign, Grid3x3, Italic, Merge, BarChart3, PaintBucket, Percent, Plus, Redo2, Search, Underline, Undo2, WrapText, X } from 'lucide-react';
 import { Grid, editText, type ContextAt, type GridHandle, type Pos, type Sel } from './Grid.tsx';
-import { colLeft, extent, key, MIN_COLS, MIN_ROWS, norm, numberOf, parseInput, parseRange, rangeText, rowTop, type Cell, type CellFmt, type Chart, type ChartType, type Edge, type Range, type Sheet, type Workbook } from './model.ts';
-import { autofill, setBorders, type BorderMode, clearRange, deleteCols, deleteRows, fill, formatRange, fromTsv, insertCols, insertRows, mergeAt, mergeRange, setMany, setValue, sortRange, stats, toTsv, unmergeRange, allHave } from './ops.ts';
+import { colLeft, extent, key, MIN_COLS, MIN_ROWS, norm, numberOf, parseInput, parseRange, rangeText, rowTop, type Cell, type CellFmt, type CfRule, type Chart, type ChartType, type Edge, type Range, type Sheet, type Validation, type Workbook } from './model.ts';
+import { autofill, setLink, shiftFormula, setBorders, type BorderMode, clearRange, deleteCols, deleteRows, fill, formatRange, fromTsv, insertCols, insertRows, mergeAt, mergeRange, setMany, setValue, sortRange, stats, toTsv, unmergeRange, allHave } from './ops.ts';
 import { formatCell, NUMBER_FORMATS, dateToSerial, changeDecimals } from './format.ts';
 import { chartId, currentRegion, guessHeaders } from './charts.ts';
+import { cfEvaluator, CF_KINDS, columnValues, hiddenRows, listItems, validate, validationAt } from './rules.ts';
 import { findAll, replacedText, replacementValue, type FindOpts } from './find.ts';
 import { exportXlsx } from './xlsx.ts';
 import { exportCsv } from './csv.ts';
@@ -58,11 +59,16 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const [borderColour, setBorderColour] = useState('#000000');
   const [borderStyle, setBorderStyle] = useState<Edge['st']>('thin');
   const [ctx, setCtx] = useState<{ at: { x: number; y: number }; kind: ContextAt['kind'] } | null>(null);
+  const [linkDlg, setLinkDlg] = useState<{ url: string } | null>(null);
+  const [cfDlg, setCfDlg] = useState<{ range: string; kind: CfRule['kind']; v1: string; v2: string; fill: string; color: string; bold: boolean; lo: string; hi: string; error?: string } | null>(null);
+  const [dvDlg, setDvDlg] = useState<{ range: string; kind: 'list' | 'source' | 'whole' | 'decimal'; items: string; source: string; min: string; max: string; blank: boolean; message: string; error?: string } | null>(null);
+  const [filterDlg, setFilterDlg] = useState<{ col: number; off: Set<string> } | null>(null);
+  const [listMenu, setListMenu] = useState<{ at: { x: number; y: number }; r: number; c: number } | null>(null);
   const [chartSel, setChartSel] = useState<string | null>(null);
   const [chartDlg, setChartDlg] = useState<{ id?: string; type: ChartType; title: string; range: string; header: boolean; labels: boolean; error?: string } | null>(null);
   const [find, setFind] = useState<{ q: string; rep: string; matchCase: boolean; wholeCell: boolean; idx: number } | null>(null);
   const grid = useRef<GridHandle>(null);
-  const clip = useRef<{ text: string; cells: Cell[][] } | null>(null);
+  const clip = useRef<{ text: string; cells: Cell[][]; from: { r: number; c: number } } | null>(null);
   const isCsv = kind === 'csv';
   const touchRef = useRef<() => void>(() => undefined);
   const bookRef = useRef(book); bookRef.current = book;
@@ -95,7 +101,8 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     setEditing(null);
     const cell = sheet.cells[key(e.pos.r, e.pos.c)];
     if (e.text !== editText(cell)) {
-      edit((s) => typeInto(s, e.pos.r, e.pos.c, e.text));
+      const bad = validate(sheet, e.pos.r, e.pos.c, e.text);
+      if (bad) saver.setMessage(bad); else edit((s) => typeInto(s, e.pos.r, e.pos.c, e.text));
     }
     if (move) { const [dr, dc] = DELTA[move]; select(clampPos({ r: e.pos.r + dr, c: e.pos.c + dc })); } else setSel((s) => ({ ...s }));
     grid.current?.focus();
@@ -110,8 +117,60 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     return setValue(s0, r, c, v, nf ? { nf } : undefined);
   };
 
+  // ---- links, rules, filters
+  const cfEval = useMemo(() => cfEvaluator(sheet), [sheet.cf, sheet.cells]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hidden = useMemo(() => hiddenRows(sheet), [sheet.filter, sheet.cells]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openLink = (url: string) => { window.open(url, '_blank', 'noopener'); };
+  const openLinkDlg = () => setLinkDlg({ url: activeCell?.link ?? '' });
+  const saveLink = () => {
+    if (!linkDlg) return;
+    let u = linkDlg.url.trim();
+    if (u && !/^(https?:|mailto:)/i.test(u)) u = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u) ? `mailto:${u}` : `https://${u}`;
+    edit((s0) => setLink(s0, range, u || undefined)); setLinkDlg(null); grid.current?.focus();
+  };
+  const regionOrRange = (): Range => (range.r1 === range.r2 && range.c1 === range.c2 ? currentRegion(sheet, active) : range);
+  const openCfDlg = () => setCfDlg({ range: rangeText(range), kind: 'gt', v1: '', v2: '', fill: '#ffd6d6', color: '#9c0006', bold: false, lo: '#ffffff', hi: '#63be7b' });
+  const addCf = () => {
+    if (!cfDlg) return;
+    const g = parseRange(cfDlg.range.trim());
+    if (!g) { setCfDlg({ ...cfDlg, error: 'Type the cells as a range such as B2:B20.' }); return; }
+    const needs1 = !['blank', 'notblank', 'scale'].includes(cfDlg.kind);
+    if (needs1 && cfDlg.v1.trim() === '') { setCfDlg({ ...cfDlg, error: 'Type the value to compare with.' }); return; }
+    if (cfDlg.kind === 'between' && cfDlg.v2.trim() === '') { setCfDlg({ ...cfDlg, error: 'Type both ends of the range.' }); return; }
+    const rule: CfRule = { id: `cf${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, range: g, kind: cfDlg.kind, ...(needs1 ? { v1: cfDlg.v1.trim() } : {}), ...(cfDlg.kind === 'between' ? { v2: cfDlg.v2.trim() } : {}), ...(cfDlg.kind === 'scale' ? { lo: cfDlg.lo, hi: cfDlg.hi } : { fill: cfDlg.fill, color: cfDlg.color, ...(cfDlg.bold ? { bold: true } : {}) }) };
+    edit((s0) => ({ ...s0, cf: [...(s0.cf ?? []), rule] })); setCfDlg({ ...cfDlg, v1: '', v2: '', error: undefined });
+  };
+  const describeCf = (r: CfRule) => `${rangeText(r.range)}: ${CF_KINDS.find(([k]) => k === r.kind)?.[1] ?? r.kind}${r.v1 ? ` ${r.v1}` : ''}${r.v2 ? ` and ${r.v2}` : ''}`;
+  const openDvDlg = () => {
+    const v = validationAt(sheet, active.r, active.c);
+    setDvDlg(v ? { range: rangeText(v.range), kind: v.kind === 'list' ? (v.items ? 'list' : 'source') : v.kind, items: (v.items ?? []).join(', '), source: v.source ?? '', min: v.min === undefined ? '' : String(v.min), max: v.max === undefined ? '' : String(v.max), blank: v.blank, message: v.message ?? '' } : { range: rangeText(range), kind: 'list', items: '', source: '', min: '', max: '', blank: true, message: '' });
+  };
+  const saveDv = () => {
+    if (!dvDlg) return;
+    const g = parseRange(dvDlg.range.trim());
+    if (!g) { setDvDlg({ ...dvDlg, error: 'Type the cells as a range such as B2:B20.' }); return; }
+    const base = { range: g, blank: dvDlg.blank, ...(dvDlg.message.trim() ? { message: dvDlg.message.trim() } : {}) };
+    let v: Validation;
+    if (dvDlg.kind === 'list') { const items = dvDlg.items.split(',').map((x) => x.trim()).filter(Boolean); if (!items.length) { setDvDlg({ ...dvDlg, error: 'Type the choices, separated by commas.' }); return; } v = { ...base, kind: 'list', items }; }
+    else if (dvDlg.kind === 'source') { if (!parseRange(dvDlg.source.trim())) { setDvDlg({ ...dvDlg, error: 'Type the cells holding the choices, such as E2:E9.' }); return; } v = { ...base, kind: 'list', source: dvDlg.source.trim() }; }
+    else { const min = dvDlg.min.trim() === '' ? undefined : Number(dvDlg.min), max = dvDlg.max.trim() === '' ? undefined : Number(dvDlg.max); if ((min === undefined && max === undefined) || Number.isNaN(min) || Number.isNaN(max)) { setDvDlg({ ...dvDlg, error: 'Type a smallest and/or largest number.' }); return; } v = { ...base, kind: dvDlg.kind, ...(min === undefined ? {} : { min }), ...(max === undefined ? {} : { max }) }; }
+    const clash = (x: Validation) => !(x.range.r2 < g.r1 || x.range.r1 > g.r2 || x.range.c2 < g.c1 || x.range.c1 > g.c2);
+    edit((s0) => ({ ...s0, dv: [...(s0.dv ?? []).filter((x) => !clash(x)), v] })); setDvDlg(null); grid.current?.focus();
+  };
+  const removeDv = () => { edit((s0) => { const g = dvDlg ? parseRange(dvDlg.range.trim()) ?? range : range; const next = (s0.dv ?? []).filter((x) => x.range.r2 < g.r1 || x.range.r1 > g.r2 || x.range.c2 < g.c1 || x.range.c1 > g.c2); const o = { ...s0 }; if (next.length) o.dv = next; else delete o.dv; return o; }); setDvDlg(null); };
+  const makeFilter = () => { const g = regionOrRange(); if (g.r2 <= g.r1) { saver.setMessage('A filter needs a heading row and at least one row below it.'); return; } edit((s0) => ({ ...s0, filter: { range: g, show: {} } })); };
+  const dropFilter = () => edit((s0) => { const o = { ...s0 }; delete o.filter; return o; });
+  const openFilterDlg = (col: number) => { const f = sheet.filter; if (!f) return; const all = columnValues(sheet, f, col).map((x) => x.text), allowed = f.show[col]; setFilterDlg({ col, off: new Set(allowed ? all.filter((t) => !allowed.includes(t)) : []) }); };
+  const applyFilter = () => {
+    if (!filterDlg || !sheet.filter) return;
+    const all = columnValues(sheet, sheet.filter, filterDlg.col).map((x) => x.text);
+    const show = { ...sheet.filter.show }; if (filterDlg.off.size) show[filterDlg.col] = all.filter((t) => !filterDlg.off.has(t)); else delete show[filterDlg.col];
+    edit((s0) => ({ ...s0, filter: { ...s0.filter!, show } })); setFilterDlg(null);
+  };
+  const filterSort = (asc: boolean) => { if (!filterDlg || !sheet.filter) return; edit((s0) => sortRange(s0, s0.filter!.range, filterDlg.col, asc, true)); setFilterDlg(null); };
+
   // ---- charts
-  const CHART_TYPES: [ChartType, string][] = [['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['pie', 'Pie']];
+  const CHART_TYPES: [ChartType, string][] = [['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['area', 'Area'], ['scatter', 'Scatter (first column is x)'], ['pie', 'Pie']];
   const openChartDlg = (id?: string) => {
     const ch = id ? sheet.charts?.find((c) => c.id === id) : undefined;
     if (ch) { setChartDlg({ id, type: ch.type, title: ch.title, range: rangeText(ch.range), header: ch.header, labels: ch.labels }); return; }
@@ -156,13 +215,13 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     const text = toTsv(sheet, range, formatCell);
     const cells: Cell[][] = [];
     for (let r = range.r1; r <= range.r2; r++) { const row: Cell[] = []; for (let c = range.c1; c <= range.c2; c++) row.push(sheet.cells[key(r, c)] ?? { v: null }); cells.push(row); }
-    clip.current = { text, cells };
+    clip.current = { text, cells, from: { r: range.r1, c: range.c1 } };
     if (cut) edit((s) => clearRange(s, range));
     return text;
   };
   const doPaste = (text: string) => {
     const at = { r: range.r1, c: range.c1 };
-    if (clip.current && clip.current.text === text) { const cells = clip.current.cells; edit((s) => setMany(s, at, cells)); setSel({ anchor: at, focus: { r: at.r + cells.length - 1, c: at.c + (cells[0]?.length ?? 1) - 1 } }); return; }
+    if (clip.current && clip.current.text === text) { const from = clip.current.from, cells = clip.current.cells.map((row) => row.map((cell) => (cell.f !== undefined ? { ...cell, f: shiftFormula(cell.f, at.r - from.r, at.c - from.c) } : cell))); edit((s) => setMany(s, at, cells)); setSel({ anchor: at, focus: { r: at.r + cells.length - 1, c: at.c + (cells[0]?.length ?? 1) - 1 } }); return; }
     const grid2 = fromTsv(text);
     const cells: Cell[][] = grid2.map((r) => r.map((t) => ({ v: parseInput(t, !isCsv) })));
     edit((s) => setMany(s, at, cells));
@@ -218,6 +277,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     if (mod && !e.altKey) {
       const l = k.toLowerCase();
       if (l === 's') { void doSave(e.shiftKey); return true; }
+      if (l === 'k' && !isCsv) { openLinkDlg(); return true; }
       if (l === 'f' || l === 'h') { setFind((f0) => f0 ?? { q: '', rep: '', matchCase: false, wholeCell: false, idx: 0 }); return true; }
       if (l === 'z') { if (e.shiftKey) h.redo(); else h.undo(); setDirty(true); setDirtyState(true); return true; }
       if (l === 'y') { h.redo(); return true; }
@@ -284,7 +344,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     { label: 'Insert', items: [
       { label: 'Row above', run: () => { edit((s) => insertRows(s, range.r1, range.r2 - range.r1 + 1)); } }, { label: 'Row below', run: () => { edit((s) => insertRows(s, range.r2 + 1, range.r2 - range.r1 + 1)); } },
       { label: 'Column left', run: () => { edit((s) => insertCols(s, range.c1, range.c2 - range.c1 + 1)); } }, { label: 'Column right', run: () => { edit((s) => insertCols(s, range.c2 + 1, range.c2 - range.c1 + 1)); } }, sep,
-      ...(isCsv ? [] : [{ label: 'Chart…', run: () => openChartDlg() } as MenuItem, ...(chartSel ? [{ label: 'Edit the selected chart…', run: () => openChartDlg(chartSel) } as MenuItem, { label: 'Delete the selected chart', run: () => deleteChart(chartSel) } as MenuItem] : []), sep]),
+      ...(isCsv ? [] : [{ label: 'Link…', keys: 'Ctrl+K', run: openLinkDlg } as MenuItem, { label: 'Remove link', disabled: !activeCell?.link, run: () => edit((s0) => setLink(s0, range, undefined)) } as MenuItem, { label: 'Chart…', run: () => openChartDlg() } as MenuItem, ...(chartSel ? [{ label: 'Edit the selected chart…', run: () => openChartDlg(chartSel) } as MenuItem, { label: 'Delete the selected chart', run: () => deleteChart(chartSel) } as MenuItem] : []), sep]),
       { label: 'Delete row(s)', run: () => edit((s) => deleteRows(s, rowsSel.from, rowsSel.to)) }, { label: 'Delete column(s)', run: () => edit((s) => deleteCols(s, colsSel.from, colsSel.to)) }, ...(isCsv ? [] : [sep, { label: 'New sheet', run: addSheet } as MenuItem]),
     ] },
     { label: 'Format', items: [
@@ -294,10 +354,12 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       { label: 'Vertical align', sub: (['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: v[0].toUpperCase() + v.slice(1), check: activeCell?.s?.va === v, run: () => apply({ va: v }) })) },
       { label: 'Borders', sub: BORDER_MODES.map(([m, l]): MenuItem => ({ label: l, run: () => borders(m) })) }, sep,
       { label: 'Merge cells', run: () => edit((s) => mergeRange(s, range)) }, { label: 'Unmerge cells', run: () => edit((s) => unmergeRange(s, range)) }, sep,
+      ...(isCsv ? [] : [{ label: 'Conditional formatting…', run: openCfDlg } as MenuItem, sep]),
       { label: 'Fit column width to the text', run: () => { for (let c = range.c1; c <= range.c2; c++) autoFit(c); } }, { label: 'Clear formatting', run: () => edit((s) => { let o = s; for (let r = range.r1; r <= range.r2; r++) for (let c = range.c1; c <= range.c2; c++) { const cell = o.cells[key(r, c)]; if (cell?.s) o = setMany(o, { r, c }, [[{ ...cell, s: undefined }]]); } return o; }) },
     ] },
     { label: 'Data', items: [
       { label: 'Sort A → Z by this column', run: () => sortBy(true) }, { label: 'Sort Z → A by this column', run: () => sortBy(false) }, { label: 'The first row is a header', check: header, run: () => setHeader(!header) },
+      ...(isCsv ? [] : [sep, { label: sheet.filter ? 'Remove the filter' : 'Create a filter', run: () => (sheet.filter ? dropFilter() : makeFilter()) } as MenuItem, { label: 'Data validation…', run: openDvDlg } as MenuItem]),
     ] },
   ];
 
@@ -384,6 +446,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       <div className="relative flex min-h-0 flex-1 flex-col">
         <Grid ref={grid} sheet={sheet} rows={rows} cols={cols} zoom={zoom} sel={sel} onSel={(s) => { setSel(s); setBar(null); }} editing={editing} setEditing={setEditing} onCommit={(p, t, m) => finish({ pos: p, text: t, typed: false }, m)}
           onKey={onKey} onResize={(kind, i, size) => edit((s) => (kind === 'col' ? { ...s, colW: { ...s.colW, [i]: size } } : { ...s, rowH: { ...s.rowH, [i]: size } }))} onCopy={doCopy} onPaste={doPaste}
+          cf={cfEval} hidden={hidden} filterHeads={sheet.filter ? { r: sheet.filter.range.r1, c1: sheet.filter.range.c1, c2: sheet.filter.range.c2, active: new Set(Object.keys(sheet.filter.show).map(Number)) } : null} listCell={(() => { const v = validationAt(sheet, active.r, active.c); return v?.kind === 'list' ? key(active.r, active.c) : null; })()} onLink={openLink} onFilterMenu={(c) => openFilterDlg(c)} onListMenu={(r, c, at) => setListMenu({ at, r, c })}
           chartSel={chartSel} onChartSel={setChartSel} onChartMove={moveChart} onChartEdit={openChartDlg} onFill={onFill} onContext={(c) => setCtx({ at: { x: c.x, y: c.y }, kind: c.kind })} hits={find ? hitSet : undefined} hitNow={hitAt ? key(hitAt.r, hitAt.c) : null} />
         {find && (
           <div role="search" aria-label="Find and replace" className="bt-window tk-pop absolute right-5 top-2 z-20 w-72 p-2 text-sm shadow-lg">
@@ -408,6 +471,66 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           </div>
         )}
       </div>
+      {listMenu && (() => { const v = validationAt(sheet, listMenu.r, listMenu.c); return v ? <ContextMenu at={listMenu.at} items={listItems(sheet, v).map((t): MenuItem => ({ label: t, check: formatCell(sheet.cells[key(listMenu.r, listMenu.c)]) === t, run: () => { const { r, c } = listMenu; edit((s0) => typeInto(s0, r, c, t)); } }))} onClose={() => { setListMenu(null); grid.current?.focus(); }} /> : null; })()}
+      {linkDlg && (
+        <Dialog title="Link" onClose={() => { setLinkDlg(null); grid.current?.focus(); }} footer={<><button className="btn" onClick={() => { setLinkDlg(null); grid.current?.focus(); }}>Cancel</button><button className="btn btn-accent" onClick={saveLink}>{linkDlg.url.trim() ? 'Apply' : 'Remove link'}</button></>}>
+          <label className="grid gap-1 text-sm">Web or e-mail address<input autoFocus aria-label="Link address" className="input" placeholder="https://example.com" value={linkDlg.url} onChange={(e) => setLinkDlg({ url: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveLink(); } }} /></label>
+          <p className="mt-2 text-xs text-muted">Applies to the selected cells. Ctrl+click a linked cell to open it.</p>
+        </Dialog>
+      )}
+      {cfDlg && (
+        <Dialog title="Conditional formatting" wide onClose={() => { setCfDlg(null); grid.current?.focus(); }} footer={<button className="btn btn-accent" onClick={() => { setCfDlg(null); grid.current?.focus(); }}>Done</button>}>
+          <div className="grid gap-3 text-sm">
+            {(sheet.cf ?? []).length > 0 && (
+              <ul aria-label="Rules" className="grid gap-1">
+                {(sheet.cf ?? []).map((r) => (
+                  <li key={r.id} className="flex items-center gap-2 rounded-theme border border-line px-2 py-1"><span className="inline-block h-4 w-4 rounded border border-line" style={{ background: r.kind === 'scale' ? `linear-gradient(90deg, ${r.lo}, ${r.hi})` : r.fill }} /><span className="flex-1">{describeCf(r)}</span>
+                    <button className="btn btn-ghost text-xs" aria-label={`Delete rule ${describeCf(r)}`} onClick={() => edit((s0) => { const next = (s0.cf ?? []).filter((x) => x.id !== r.id); const o = { ...s0 }; if (next.length) o.cf = next; else delete o.cf; return o; })}>Delete</button></li>
+                ))}
+              </ul>
+            )}
+            <div className="grid gap-2 rounded-theme border border-line p-2">
+              <b>Add a rule</b>
+              <label className="grid gap-1">Cells <input aria-label="Rule cells" className="input" value={cfDlg.range} onChange={(e) => setCfDlg({ ...cfDlg, range: e.target.value, error: undefined })} /></label>
+              <label className="grid gap-1">Format cells if
+                <select aria-label="Rule kind" className="input" value={cfDlg.kind} onChange={(e) => setCfDlg({ ...cfDlg, kind: e.target.value as CfRule['kind'] })}>{CF_KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+              {!['blank', 'notblank', 'scale'].includes(cfDlg.kind) && <div className="flex gap-2"><input aria-label="Rule value" className="input" placeholder={cfDlg.kind === 'text' ? 'Text' : 'Value'} value={cfDlg.v1} onChange={(e) => setCfDlg({ ...cfDlg, v1: e.target.value, error: undefined })} />{cfDlg.kind === 'between' && <input aria-label="Rule second value" className="input" placeholder="and" value={cfDlg.v2} onChange={(e) => setCfDlg({ ...cfDlg, v2: e.target.value, error: undefined })} />}</div>}
+              {cfDlg.kind === 'scale'
+                ? <div className="flex items-center gap-3">Lowest <input aria-label="Lowest colour" type="color" value={cfDlg.lo} onChange={(e) => setCfDlg({ ...cfDlg, lo: e.target.value })} /> Highest <input aria-label="Highest colour" type="color" value={cfDlg.hi} onChange={(e) => setCfDlg({ ...cfDlg, hi: e.target.value })} /></div>
+                : <div className="flex items-center gap-3">Fill <input aria-label="Rule fill" type="color" value={cfDlg.fill} onChange={(e) => setCfDlg({ ...cfDlg, fill: e.target.value })} /> Text <input aria-label="Rule text colour" type="color" value={cfDlg.color} onChange={(e) => setCfDlg({ ...cfDlg, color: e.target.value })} /><label className="flex items-center gap-1"><input type="checkbox" checked={cfDlg.bold} onChange={(e) => setCfDlg({ ...cfDlg, bold: e.target.checked })} />Bold</label></div>}
+              {cfDlg.error && <p role="alert" className="text-bad">{cfDlg.error}</p>}
+              <div><button className="btn btn-accent" onClick={addCf}>Add rule</button></div>
+            </div>
+          </div>
+        </Dialog>
+      )}
+      {dvDlg && (
+        <Dialog title="Data validation" onClose={() => { setDvDlg(null); grid.current?.focus(); }} footer={<><button className="btn mr-auto" onClick={removeDv}>Remove validation</button><button className="btn" onClick={() => { setDvDlg(null); grid.current?.focus(); }}>Cancel</button><button className="btn btn-accent" onClick={saveDv}>Save</button></>}>
+          <div className="grid gap-3 text-sm">
+            <label className="grid gap-1">Cells <input aria-label="Validation cells" className="input" value={dvDlg.range} onChange={(e) => setDvDlg({ ...dvDlg, range: e.target.value, error: undefined })} /></label>
+            <label className="grid gap-1">Allow
+              <select aria-label="Validation kind" className="input" value={dvDlg.kind} onChange={(e) => setDvDlg({ ...dvDlg, kind: e.target.value as NonNullable<typeof dvDlg>['kind'] })}><option value="list">A list of choices</option><option value="source">A list from cells</option><option value="whole">A whole number</option><option value="decimal">A number</option></select></label>
+            {dvDlg.kind === 'list' && <label className="grid gap-1">Choices (separated by commas)<input aria-label="Validation choices" className="input" value={dvDlg.items} onChange={(e) => setDvDlg({ ...dvDlg, items: e.target.value, error: undefined })} /></label>}
+            {dvDlg.kind === 'source' && <label className="grid gap-1">Cells holding the choices<input aria-label="Validation source" className="input" placeholder="E2:E9" value={dvDlg.source} onChange={(e) => setDvDlg({ ...dvDlg, source: e.target.value, error: undefined })} /></label>}
+            {(dvDlg.kind === 'whole' || dvDlg.kind === 'decimal') && <div className="flex gap-2"><label className="grid flex-1 gap-1">Smallest<input aria-label="Validation smallest" className="input" value={dvDlg.min} onChange={(e) => setDvDlg({ ...dvDlg, min: e.target.value, error: undefined })} /></label><label className="grid flex-1 gap-1">Largest<input aria-label="Validation largest" className="input" value={dvDlg.max} onChange={(e) => setDvDlg({ ...dvDlg, max: e.target.value, error: undefined })} /></label></div>}
+            <label className="flex items-center gap-1"><input type="checkbox" checked={dvDlg.blank} onChange={(e) => setDvDlg({ ...dvDlg, blank: e.target.checked })} />Allow empty cells</label>
+            <label className="grid gap-1">Message when the entry is refused (optional)<input aria-label="Validation message" className="input" value={dvDlg.message} onChange={(e) => setDvDlg({ ...dvDlg, message: e.target.value })} /></label>
+            {dvDlg.error && <p role="alert" className="text-bad">{dvDlg.error}</p>}
+          </div>
+        </Dialog>
+      )}
+      {filterDlg && sheet.filter && (() => {
+        const vals = columnValues(sheet, sheet.filter, filterDlg.col);
+        const toggle = (t: string) => { const off = new Set(filterDlg.off); if (off.has(t)) off.delete(t); else off.add(t); setFilterDlg({ ...filterDlg, off }); };
+        return (
+          <Dialog title={`Filter column ${colLetter(filterDlg.col)}`} onClose={() => setFilterDlg(null)} footer={<><button className="btn" onClick={() => setFilterDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={applyFilter}>Apply</button></>}>
+            <div className="mb-2 flex flex-wrap gap-2 text-sm"><button className="btn text-xs" onClick={() => filterSort(true)}>Sort A → Z</button><button className="btn text-xs" onClick={() => filterSort(false)}>Sort Z → A</button><button className="btn text-xs" onClick={() => setFilterDlg({ ...filterDlg, off: new Set() })}>Select all</button><button className="btn text-xs" onClick={() => setFilterDlg({ ...filterDlg, off: new Set(vals.map((x) => x.text)) })}>Clear</button></div>
+            <ul aria-label="Values" className="max-h-64 overflow-auto text-sm">
+              {vals.map((v) => <li key={v.text}><label className="flex items-center gap-2 py-0.5"><input type="checkbox" checked={!filterDlg.off.has(v.text)} onChange={() => toggle(v.text)} /><span className="flex-1">{v.text === '' ? '(empty)' : v.text}</span><span className="text-xs text-muted tabular-nums">{v.n}</span></label></li>)}
+            </ul>
+          </Dialog>
+        );
+      })()}
       {chartDlg && (
         <Dialog title={chartDlg.id ? 'Edit chart' : 'Insert chart'} onClose={() => closeChartDlg()} footer={<>
           {chartDlg.id && <button className="btn mr-auto" onClick={() => { deleteChart(chartDlg.id!); closeChartDlg(); }}>Delete chart</button>}

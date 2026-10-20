@@ -4,6 +4,7 @@ import { formatCell } from './format.ts';
 import { mergeAt } from './ops.ts';
 import { ChartView } from './ChartView.tsx';
 import { chartData } from './charts.ts';
+import type { CfLook } from './rules.ts';
 
 export interface Pos { r: number; c: number }
 export interface Sel { anchor: Pos; focus: Pos }
@@ -24,6 +25,9 @@ interface Props {
   /** the fill handle was dragged from `src` over `to` */ onFill?(src: Range, to: Range): void; onContext?(at: ContextAt): void;
   /** cells found by Find (and the one the search is on), drawn tinted */ hits?: Set<string>; hitNow?: string | null;
   /** charts float over the cells: click selects, drag moves, the corner resizes, double-click edits */
+  /** conditional formatting, rows a filter hides, the filter's heading cells, the cell holding a pick-list */
+  cf?: ((r: number, c: number) => CfLook | undefined) | null; hidden?: Set<number>; filterHeads?: { r: number; c1: number; c2: number; active: Set<number> } | null; listCell?: string | null;
+  onLink?(url: string): void; onFilterMenu?(c: number, at: { x: number; y: number }): void; onListMenu?(r: number, c: number, at: { x: number; y: number }): void;
   chartSel?: string | null; onChartSel?(id: string | null): void; onChartMove?(id: string, f: { x: number; y: number; w: number; h: number }, first: boolean): void; onChartEdit?(id: string): void;
 }
 
@@ -31,12 +35,12 @@ interface Props {
  * The grid: only the rows and columns in view are drawn, so a sheet of tens of thousands of rows scrolls smoothly. Click and drag select, the headers select
  * a whole column or row and their edges resize it. Keyboard and clipboard are handled by the container; typing starts editing the active cell.
  */
-export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste, onFill, onContext, hits, hitNow, chartSel, onChartSel, onChartMove, onChartEdit }, ref) {
+export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, cols, zoom, sel, onSel, editing, setEditing, onCommit, onKey, onResize, onCopy, onPaste, onFill, onContext, hits, hitNow, cf, hidden, filterHeads, listCell, onLink, onFilterMenu, onListMenu, chartSel, onChartSel, onChartMove, onChartEdit }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 900, h: 500 });
   const colX = useMemo(() => { const a = [0]; for (let c = 0; c < cols; c++) a.push(a[c] + (sheet.colW[c] ?? DEFAULT_COL_W)); return a; }, [cols, sheet.colW]);
-  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (sheet.rowH[r] ?? DEFAULT_ROW_H)); return a; }, [rows, sheet.rowH]);
+  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (hidden?.has(r) ? 0 : sheet.rowH[r] ?? DEFAULT_ROW_H)); return a; }, [rows, sheet.rowH, hidden]);
   const fr = Math.min(sheet.freeze?.rows ?? 0, rows), fc = Math.min(sheet.freeze?.cols ?? 0, cols);
   const find = (arr: number[], v: number) => { let lo = 0, hi = arr.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; };
   useImperativeHandle(ref, () => ({
@@ -113,16 +117,18 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
     const align = s?.align ?? (numeric ? 'right' : typeof cell?.v === 'boolean' ? 'center' : 'left');
     const bd = s?.bd;
     const va = s?.va;
+    const look = cf?.(r, c);
+    if (rowY[r + 1] - rowY[r] === 0) return null;
     const style: React.CSSProperties = {
-      left: x, top: y, width: w, height: h, textAlign: align, background: s?.fill, color: s?.color ?? (cell?.err ? 'hsl(var(--bad))' : pending ? 'hsl(var(--muted))' : undefined),
-      fontWeight: s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: s?.u ? 'underline' : undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined,
+      left: x, top: y, width: w, height: h, textAlign: align, background: look?.fill ?? s?.fill, color: look?.color ?? s?.color ?? (cell?.link ? '#0563c1' : cell?.err ? 'hsl(var(--bad))' : pending ? 'hsl(var(--muted))' : undefined),
+      fontWeight: look?.bold || s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: s?.u || cell?.link ? 'underline' : undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined,
       whiteSpace: s?.wrap ? 'pre-wrap' : 'pre', overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis',
       ...(bd ? { borderTop: edgeCss(bd.t), borderLeft: edgeCss(bd.l), borderBottom: edgeCss(bd.b), borderRight: edgeCss(bd.r) } : {}),
       ...(va ? { display: 'flex', flexDirection: 'column', justifyContent: va === 'top' ? 'flex-start' : va === 'middle' ? 'center' : 'flex-end', lineHeight: s?.wrap ? 1.25 : '23px' } : {}),
     };
     return (
       <div key={k} className={`sheet-cell${hitNow === k ? ' sheet-hit-now' : hits?.has(k) ? ' sheet-hit' : ''}`} data-r={r} data-c={c} style={style}
-        onPointerDown={(e) => down(e, 'cells', { r, c })} onContextMenu={(e) => context(e, 'cell', r, c)} onDoubleClick={() => !editing && setEditing({ pos: { r, c }, text: editText(cell), typed: false })}>{va ? <span style={{ overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis' }}>{text}</span> : text}</div>
+        onPointerDown={(e) => { if (cell?.link && (e.ctrlKey || e.metaKey) && onLink) { e.preventDefault(); onLink(cell.link); return; } down(e, 'cells', { r, c }); }} title={cell?.link ? `${cell.link} (Ctrl+click to open)` : undefined} onContextMenu={(e) => context(e, 'cell', r, c)} onDoubleClick={() => !editing && setEditing({ pos: { r, c }, text: editText(cell), typed: false })}>{va ? <span style={{ overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis' }}>{text}</span> : text}{filterHeads && r === filterHeads.r && c >= filterHeads.c1 && c <= filterHeads.c2 && <span role="button" aria-label={`Filter column ${colName(c)}`} className={`sheet-filter-btn${filterHeads.active.has(c) ? ' on' : ''}`} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onFilterMenu?.(c, { x: e.clientX, y: e.clientY }); }}>▾</span>}{listCell === k && <span role="button" aria-label="Choose from the list" className="sheet-filter-btn on" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onListMenu?.(r, c, { x: e.clientX, y: e.clientY }); }}>▾</span>}</div>
     );
   };
   /** the cells of a block of rows and columns, drawn in one layer */
