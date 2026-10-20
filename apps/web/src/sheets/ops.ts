@@ -38,7 +38,7 @@ export function formatRange(s: Sheet, g: Range, patch: Partial<CellFmt>): Sheet 
   return o;
 }
 /** is every cell of the range already formatted with this flag? (drives the toolbar's pressed state and toggling) */
-export const allHave = (s: Sheet, g: Range, flag: 'b' | 'i' | 'u'): boolean => { let all = true; each(g, (r, c) => { if (!s.cells[key(r, c)]?.s?.[flag]) all = false; }); return all; };
+export const allHave = (s: Sheet, g: Range, flag: 'b' | 'i' | 'u' | 'st'): boolean => { let all = true; each(g, (r, c) => { if (!s.cells[key(r, c)]?.s?.[flag]) all = false; }); return all; };
 
 /** Insert `n` rows before row `at` (cells, row heights and merges below move down). */
 export function insertRows(s: Sheet, at: number, n = 1): Sheet {
@@ -237,3 +237,22 @@ export function shiftFormula(f: string, dr: number, dc: number): string {
     return c < 1 || r < 1 || c > 16384 || r > 1048576 ? `${pre}#REF!` : `${pre}${ca}${colAt(c)}${ra}${r}`;
   }))).join('');
 }
+
+/** Every cell of the range takes exactly this look (or none): what the paint-format tool does. */
+export function setFormat(s: Sheet, g: Range, fmt: CellFmt | undefined): Sheet {
+  const o = copy(s);
+  each(g, (r, c) => {
+    const k = key(r, c), cell = o.cells[k] ?? { v: null };
+    const next: Cell = { ...cell }; if (fmt && Object.keys(fmt).length) next.s = JSON.parse(JSON.stringify(fmt)) as CellFmt; else delete next.s;
+    if (isEmptyCell(next)) delete o.cells[k]; else o.cells[k] = next;
+  });
+  return o;
+}
+/** Paste only the looks of copied cells (Paste special > Formatting only): values and formulas underneath stay. */
+export function pasteFormats(s: Sheet, at: { r: number; c: number }, rows: Cell[][]): Sheet {
+  let o = s;
+  rows.forEach((row, i) => row.forEach((cell, j) => { o = setFormat(o, { r1: at.r + i, c1: at.c + j, r2: at.r + i, c2: at.c + j }, cell.s); }));
+  return o;
+}
+/** A copy of cells with only their values (formulas become what they showed). */
+export const valuesOf = (rows: Cell[][]): Cell[][] => rows.map((row) => row.map((c) => ({ v: c.v, ...(c.err ? { err: true } : {}) })));

@@ -6,7 +6,7 @@
 export interface Edge { st: 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double'; c: string }
 export interface Borders { t?: Edge; b?: Edge; l?: Edge; r?: Edge }
 export interface CellFmt {
-  b?: boolean; i?: boolean; u?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; /** vertical alignment (bottom is the spreadsheet default) */ va?: 'top' | 'middle' | 'bottom'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean; bd?: Borders;
+  b?: boolean; i?: boolean; u?: boolean; /** strikethrough */ st?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; /** vertical alignment (bottom is the spreadsheet default) */ va?: 'top' | 'middle' | 'bottom'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean; bd?: Borders;
 }
 export type CellValue = string | number | boolean | null;
 export interface Cell { v: CellValue; f?: string; /** an error value such as #DIV/0! (kept as text in `v`) */ err?: boolean; s?: CellFmt; /** a hyperlink (http, https or mailto) */ link?: string }

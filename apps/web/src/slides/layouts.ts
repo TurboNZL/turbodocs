@@ -8,37 +8,36 @@ import { SLIDE_16x9, textBox, uid, type Deck, type Role, type Slide, type TextEl
 interface Slot { role: Role; x: number; y: number; w: number; h: number; size: number; b?: boolean; align?: 'left' | 'center' | 'right'; bullet?: boolean; valign?: 'top' | 'middle' | 'bottom'; ph: string; color?: string }
 export interface Layout { id: string; label: string; slots: Slot[] }
 const MUTED = '#6b6f76';
-const TITLE: Slot = { role: 'title', x: 0.06, y: 0.06, w: 0.88, h: 0.16, size: 36, b: true, valign: 'middle', ph: 'Click to add a title' };
+const TITLE: Slot = { role: 'title', x: 0.06, y: 0.06, w: 0.88, h: 0.16, size: 36, b: true, valign: 'middle', ph: 'Click to add title' };
+const BODY = (over: Partial<Slot> = {}): Slot => ({ role: 'body', x: 0.06, y: 0.27, w: 0.88, h: 0.63, size: 24, bullet: true, ph: 'Click to add text', ...over });
 
+/** The layouts Google Slides offers, in its order and under its names. */
 export const LAYOUTS: Layout[] = [
   { id: 'title', label: 'Title slide', slots: [
-    { role: 'title', x: 0.1, y: 0.3, w: 0.8, h: 0.2, size: 44, b: true, align: 'center', valign: 'middle', ph: 'Click to add a title' },
-    { role: 'subtitle', x: 0.15, y: 0.54, w: 0.7, h: 0.14, size: 24, align: 'center', color: MUTED, ph: 'Click to add a subtitle' },
+    { role: 'title', x: 0.1, y: 0.3, w: 0.8, h: 0.2, size: 44, b: true, align: 'center', valign: 'middle', ph: 'Click to add title' },
+    { role: 'subtitle', x: 0.15, y: 0.54, w: 0.7, h: 0.14, size: 24, align: 'center', color: MUTED, ph: 'Click to add subtitle' },
   ] },
-  { id: 'content', label: 'Title and content', slots: [TITLE, { role: 'body', x: 0.06, y: 0.27, w: 0.88, h: 0.63, size: 24, bullet: true, ph: 'Click to add text' }] },
-  { id: 'section', label: 'Section header', slots: [
-    { role: 'title', x: 0.08, y: 0.36, w: 0.84, h: 0.2, size: 48, b: true, valign: 'bottom', ph: 'Click to add a section title' },
-    { role: 'subtitle', x: 0.08, y: 0.6, w: 0.84, h: 0.12, size: 24, color: MUTED, ph: 'Click to add a description' },
-  ] },
-  { id: 'two', label: 'Two columns', slots: [
-    TITLE,
-    { role: 'body', x: 0.06, y: 0.27, w: 0.42, h: 0.63, size: 22, bullet: true, ph: 'Click to add text' },
-    { role: 'body2', x: 0.52, y: 0.27, w: 0.42, h: 0.63, size: 22, bullet: true, ph: 'Click to add text' },
-  ] },
-  { id: 'compare', label: 'Comparison', slots: [
-    TITLE,
-    { role: 'head1', x: 0.06, y: 0.26, w: 0.42, h: 0.1, size: 24, b: true, valign: 'middle', ph: 'First heading' },
-    { role: 'body', x: 0.06, y: 0.37, w: 0.42, h: 0.53, size: 20, bullet: true, ph: 'Click to add text' },
-    { role: 'head2', x: 0.52, y: 0.26, w: 0.42, h: 0.1, size: 24, b: true, valign: 'middle', ph: 'Second heading' },
-    { role: 'body2', x: 0.52, y: 0.37, w: 0.42, h: 0.53, size: 20, bullet: true, ph: 'Click to add text' },
-  ] },
-  { id: 'caption', label: 'Caption and content', slots: [
-    { role: 'title', x: 0.06, y: 0.08, w: 0.3, h: 0.2, size: 30, b: true, valign: 'bottom', ph: 'Click to add a title' },
-    { role: 'subtitle', x: 0.06, y: 0.3, w: 0.3, h: 0.5, size: 18, color: MUTED, ph: 'Click to add a caption' },
-    { role: 'body', x: 0.4, y: 0.08, w: 0.54, h: 0.82, size: 24, bullet: true, ph: 'Click to add text' },
-  ] },
+  { id: 'content', label: 'Title and body', slots: [TITLE, BODY()] },
+  { id: 'two', label: 'Title and two columns', slots: [TITLE, BODY({ w: 0.42, size: 22 }), { ...BODY({ w: 0.42, size: 22, x: 0.52 }), role: 'body2' }] },
   { id: 'title-only', label: 'Title only', slots: [TITLE] },
-  { id: 'statement', label: 'Big statement', slots: [{ role: 'title', x: 0.1, y: 0.2, w: 0.8, h: 0.6, size: 54, b: true, align: 'center', valign: 'middle', ph: 'Click to add a statement' }] },
+  { id: 'one-column', label: 'One column text', slots: [
+    { role: 'title', x: 0.06, y: 0.08, w: 0.42, h: 0.2, size: 32, b: true, valign: 'bottom', ph: 'Click to add title' },
+    BODY({ x: 0.06, y: 0.32, w: 0.42, h: 0.58, size: 20, bullet: false }),
+  ] },
+  { id: 'statement', label: 'Main point', slots: [{ role: 'title', x: 0.1, y: 0.2, w: 0.8, h: 0.6, size: 54, b: true, valign: 'middle', ph: 'Click to add title' }] },
+  { id: 'section', label: 'Section header', slots: [
+    { role: 'title', x: 0.08, y: 0.36, w: 0.84, h: 0.2, size: 48, b: true, valign: 'bottom', ph: 'Click to add title' },
+    { role: 'subtitle', x: 0.08, y: 0.6, w: 0.84, h: 0.12, size: 24, color: MUTED, ph: 'Click to add subtitle' },
+  ] },
+  { id: 'section-desc', label: 'Section title and description', slots: [
+    { role: 'title', x: 0.06, y: 0.12, w: 0.42, h: 0.76, size: 40, b: true, valign: 'bottom', ph: 'Click to add title' },
+    { role: 'subtitle', x: 0.54, y: 0.12, w: 0.4, h: 0.76, size: 22, valign: 'bottom', ph: 'Click to add subtitle' },
+  ] },
+  { id: 'caption', label: 'Caption', slots: [{ role: 'subtitle', x: 0.1, y: 0.8, w: 0.8, h: 0.12, size: 20, align: 'center', color: MUTED, ph: 'Click to add text' }] },
+  { id: 'big-number', label: 'Big number', slots: [
+    { role: 'title', x: 0.1, y: 0.1, w: 0.8, h: 0.45, size: 120, b: true, align: 'center', valign: 'bottom', ph: 'Click to add title' },
+    { role: 'body', x: 0.15, y: 0.6, w: 0.7, h: 0.2, size: 24, align: 'center', ph: 'Click to add text' },
+  ] },
   { id: 'blank', label: 'Blank', slots: [] },
 ];
 export const layoutById = (id: string): Layout => LAYOUTS.find((l) => l.id === id) ?? LAYOUTS[1];

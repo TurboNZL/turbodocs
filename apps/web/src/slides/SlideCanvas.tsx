@@ -146,8 +146,8 @@ const SNAP = 6;
  * boxes, the eight handles resize, the round handle turns, double-click on a text box edits its text in place (rich text: the toolbar and the usual shortcuts work on the
  * selection) and on a table cell edits the cell. Positions are slide px; the pointer is divided by `scale`, so any zoom is exact.
  */
-export function SlideCanvas({ onEditChart, slide, deck, scale, selected, editing, cell, editCell, onSelect, onEdit, onPatch, onText, onCell, onEditCell, onCommitCell, editRef }: {
-  onEditChart?(id: string): void; slide: Slide; deck: Deck; scale: number; selected: string[]; editing: string | null; cell: CellRef | null; editCell: CellRef | null;
+export function SlideCanvas({ onContext, onEditChart, slide, deck, scale, selected, editing, cell, editCell, onSelect, onEdit, onPatch, onText, onCell, onEditCell, onCommitCell, editRef }: {
+  onContext?(c: { x: number; y: number; id: string | null; cell: CellRef | null }): void; onEditChart?(id: string): void; slide: Slide; deck: Deck; scale: number; selected: string[]; editing: string | null; cell: CellRef | null; editCell: CellRef | null;
   onSelect(ids: string[]): void; onEdit(id: string | null): void; onPatch(p: Patch, first: boolean): void; onText(id: string, paras: Para[]): void;
   onCell(c: CellRef | null): void; onEditCell(c: CellRef | null): void; onCommitCell(c: CellRef, text: string, next?: 'right' | 'cancel'): void; editRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -246,7 +246,12 @@ export function SlideCanvas({ onEditChart, slide, deck, scale, selected, editing
   const single = selected.length === 1 ? byId(selected[0]) : undefined;
   return (
     <SlideStage slide={slide} deck={deck} scale={scale}>
-      <div ref={paper} style={{ position: 'absolute', inset: 0 }} onPointerDown={background}>
+      <div ref={paper} style={{ position: 'absolute', inset: 0 }} onPointerDown={background} onContextMenu={(e) => {
+        e.preventDefault();
+        const box = (e.target as HTMLElement).closest('[data-el]') as HTMLElement | null, td = (e.target as HTMLElement).closest('td[data-cell]') as HTMLElement | null;
+        const [r, c] = td ? td.dataset.cell!.split(',').map(Number) : [0, 0];
+        onContext?.({ x: e.clientX, y: e.clientY, id: box?.dataset.el ?? null, cell: box && td ? { id: box.dataset.el!, r, c } : null });
+      }}>
         {slide.els.map((el) => {
           const isSel = selected.includes(el.id), isEdit = editing === el.id;
           return (

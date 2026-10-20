@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowDownAZ, ArrowUpAZ, Baseline, Bold, DollarSign, Grid3x3, Italic, Merge, BarChart3, PaintBucket, Percent, Plus, Redo2, Search, Underline, Undo2, WrapText, X } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowDownAZ, ArrowUpAZ, Baseline, Bold, DollarSign, Grid3x3, Italic, Merge, BarChart3, PaintBucket, Filter, Link2, Paintbrush, Percent, Plus, Redo2, Search, Strikethrough, Underline, Undo2, WrapText, X } from 'lucide-react';
 import { Grid, editText, type ContextAt, type GridHandle, type Pos, type Sel } from './Grid.tsx';
 import { colLeft, extent, key, MIN_COLS, MIN_ROWS, norm, numberOf, parseInput, parseRange, rangeText, rowTop, type Cell, type CellFmt, type CfRule, type Chart, type ChartType, type Edge, type Range, type Sheet, type Validation, type Workbook } from './model.ts';
-import { autofill, setLink, shiftFormula, setBorders, type BorderMode, clearRange, deleteCols, deleteRows, fill, formatRange, fromTsv, insertCols, insertRows, mergeAt, mergeRange, setMany, setValue, sortRange, stats, toTsv, unmergeRange, allHave } from './ops.ts';
+import { autofill, pasteFormats, setFormat, valuesOf, setLink, shiftFormula, setBorders, type BorderMode, clearRange, deleteCols, deleteRows, fill, formatRange, fromTsv, insertCols, insertRows, mergeAt, mergeRange, setMany, setValue, sortRange, stats, toTsv, unmergeRange, allHave } from './ops.ts';
 import { formatCell, NUMBER_FORMATS, dateToSerial, changeDecimals } from './format.ts';
 import { chartId, currentRegion, guessHeaders } from './charts.ts';
 import { cfEvaluator, CF_KINDS, columnValues, hiddenRows, listItems, validate, validationAt } from './rules.ts';
@@ -64,6 +64,10 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const [dvDlg, setDvDlg] = useState<{ range: string; kind: 'list' | 'source' | 'whole' | 'decimal'; items: string; source: string; min: string; max: string; blank: boolean; message: string; error?: string } | null>(null);
   const [filterDlg, setFilterDlg] = useState<{ col: number; off: Set<string> } | null>(null);
   const [listMenu, setListMenu] = useState<{ at: { x: number; y: number }; r: number; c: number } | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ at: { x: number; y: number }; i: number } | null>(null);
+  const [painting, setPainting] = useState(false);
+  const pasteMode = useRef<'values' | 'format' | null>(null);
+  const paintRef = useRef<{ fmt: CellFmt | undefined; last: Sel | null } | null>(null);
   const [chartSel, setChartSel] = useState<string | null>(null);
   const [chartDlg, setChartDlg] = useState<{ id?: string; type: ChartType; title: string; range: string; header: boolean; labels: boolean; error?: string } | null>(null);
   const [find, setFind] = useState<{ q: string; rep: string; matchCase: boolean; wholeCell: boolean; idx: number } | null>(null);
@@ -221,12 +225,21 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   };
   const doPaste = (text: string) => {
     const at = { r: range.r1, c: range.c1 };
-    if (clip.current && clip.current.text === text) { const from = clip.current.from, cells = clip.current.cells.map((row) => row.map((cell) => (cell.f !== undefined ? { ...cell, f: shiftFormula(cell.f, at.r - from.r, at.c - from.c) } : cell))); edit((s) => setMany(s, at, cells)); setSel({ anchor: at, focus: { r: at.r + cells.length - 1, c: at.c + (cells[0]?.length ?? 1) - 1 } }); return; }
+    const mode = pasteMode.current; pasteMode.current = null;
+    if (clip.current && clip.current.text === text) {
+      const from = clip.current.from, src = clip.current.cells;
+      const shaped = src.map((row) => row.map((cell) => (cell.f !== undefined ? { ...cell, f: shiftFormula(cell.f, at.r - from.r, at.c - from.c) } : cell)));
+      const grow = { anchor: at, focus: { r: at.r + src.length - 1, c: at.c + (src[0]?.length ?? 1) - 1 } };
+      if (mode === 'format') edit((s0) => pasteFormats(s0, at, src)); else edit((s0) => setMany(s0, at, mode === 'values' ? valuesOf(src) : shaped));
+      setSel(grow); return;
+    }
     const grid2 = fromTsv(text);
     const cells: Cell[][] = grid2.map((r) => r.map((t) => ({ v: parseInput(t, !isCsv) })));
-    edit((s) => setMany(s, at, cells));
+    if (mode !== 'format') edit((s0) => setMany(s0, at, cells));
     setSel({ anchor: at, focus: { r: at.r + cells.length - 1, c: at.c + Math.max(...cells.map((r) => r.length)) - 1 } });
   };
+  /** Edit > Paste special: from the cells copied in this sheet (what the system clipboard holds is pasted as plain values by Ctrl+Shift+V) */
+  const pasteSpecial = (mode: 'values' | 'format') => { if (!clip.current) { saver.setMessage('Copy some cells first.'); return; } pasteMode.current = mode; doPaste(clip.current.text); };
   const menuClip = (name: 'cut' | 'copy' | 'paste') => { grid.current?.focus(); const d = desktop(); if (d) d.editCommand(name); else document.execCommand(name); };
 
   // ---- structure
@@ -250,7 +263,18 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const decimals = (d: number) => { const nf = changeDecimals(activeCell?.s?.nf, d); apply({ nf: nf ?? undefined }); };
   const freeze = (rows: number, cols: number) => edit((s) => { const o = { ...s }; if (rows > 0 || cols > 0) o.freeze = { rows, cols }; else delete o.freeze; return o; });
   const onFill = (src: Range, to: Range) => { edit((s) => autofill(s, src, to)); setSel({ anchor: { r: to.r1, c: to.c1 }, focus: { r: to.r2, c: to.c2 } }); };
-  const toggle = (flag: 'b' | 'i' | 'u') => apply({ [flag]: !allHave(sheet, range, flag) });
+  const toggle = (flag: 'b' | 'i' | 'u' | 'st') => apply({ [flag]: !allHave(sheet, range, flag) });
+  /** paint format: take the look of the cell you are on and give it to what you select next */
+  const startPaint = () => {
+    if (painting) { paintRef.current = null; setPainting(false); return; }
+    paintRef.current = { fmt: activeCell?.s ? JSON.parse(JSON.stringify(activeCell.s)) as CellFmt : undefined, last: null }; setPainting(true);
+    const done = () => { const p = paintRef.current; if (p?.last) { const g = norm(p.last.anchor, p.last.focus); edit((s0) => setFormat(s0, g, p.fmt)); } paintRef.current = null; setPainting(false); };
+    window.addEventListener('pointerup', () => setTimeout(done, 0), { once: true });
+  };
+  const clearFormatting = () => edit((s0) => setFormat(s0, range, undefined));
+  const duplicateSheet = (i: number) => commit((b) => { const src = b.sheets[i]; let name = `Copy of ${src.name}`.slice(0, 31), n = 2; while (b.sheets.some((x) => x.name === name)) name = `Copy ${n++} of ${src.name}`.slice(0, 31); const copy = JSON.parse(JSON.stringify(src)) as Sheet; return { ...b, sheets: [...b.sheets.slice(0, i + 1), { ...copy, name }, ...b.sheets.slice(i + 1)], active: i + 1 }; });
+  const moveSheet = (i: number, d: number) => { const j = i + d; if (j < 0 || j >= book.sheets.length) return; commit((b) => { const a = [...b.sheets]; [a[i], a[j]] = [a[j], a[i]]; return { ...b, sheets: a, active: j }; }); };
+  const setZoomPct = (z: number) => setZoom(Math.min(300, Math.max(50, z)));
   const setNf = (nf: string | null) => apply({ nf: nf ?? undefined });
   const sortBy = (asc: boolean) => {
     const single = range.r1 === range.r2 && range.c1 === range.c2;
@@ -274,6 +298,8 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     const f = sel.focus;
     if (chartSel && (k === 'Delete' || k === 'Backspace')) { deleteChart(chartSel); return true; }
     if (chartSel && k === 'Escape') { setChartSel(null); return true; }
+    if (e.altKey && e.shiftKey && e.code === 'Digit5') { toggle('st'); return true; }
+    if (mod && e.altKey && k.toLowerCase() === 'v') { pasteSpecial('format'); return true; }
     if (mod && !e.altKey) {
       const l = k.toLowerCase();
       if (l === 's') { void doSave(e.shiftKey); return true; }
@@ -281,6 +307,12 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       if (l === 'f' || l === 'h') { setFind((f0) => f0 ?? { q: '', rep: '', matchCase: false, wholeCell: false, idx: 0 }); return true; }
       if (l === 'z') { if (e.shiftKey) h.redo(); else h.undo(); setDirty(true); setDirtyState(true); return true; }
       if (l === 'y') { h.redo(); return true; }
+      if (l === 'v' && e.shiftKey) { pasteMode.current = 'values'; return false; } // paste as values: the browser's paste event follows
+      if (k === '\\') { clearFormatting(); return true; }
+      if (e.shiftKey && e.code === 'Digit4') { apply({ nf: '"$"#,##0.00' }); return true; }
+      if (e.shiftKey && e.code === 'Digit5') { apply({ nf: '0%' }); return true; }
+      if (e.shiftKey && e.code === 'Digit1') { apply({ nf: '#,##0.00' }); return true; }
+      if (k === ';' && !e.shiftKey && !isCsv) { edit((s0) => typeInto(s0, active.r, active.c, new Date().toISOString().slice(0, 10))); return true; }
       if (l === 'b') { toggle('b'); return true; } if (l === 'i') { toggle('i'); return true; } if (l === 'u') { toggle('u'); return true; }
       if (l === 'a') { setSel({ anchor: { r: 0, c: 0 }, focus: { r: Math.max(0, ext.rows - 1), c: Math.max(0, ext.cols - 1) } }); return true; }
       if (l === 'd') { edit((s) => fill(s, range, 'down')); return true; }
@@ -294,8 +326,9 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     if (k === 'Tab') { select(clampPos({ r: active.r, c: active.c + (e.shiftKey ? -1 : 1) })); return true; }
     if (k === 'Enter') { if (range.r1 !== range.r2 || range.c1 !== range.c2) { const n = { r: active.r + (e.shiftKey ? -1 : 1), c: active.c }; if (n.r > range.r2) { n.r = range.r1; n.c = active.c + 1 > range.c2 ? range.c1 : active.c + 1; } if (n.r < range.r1) n.r = range.r2; setSel({ anchor: n, focus: n }); } else startEdit(); return true; }
     if (k === 'F2') { startEdit(); return true; }
+    if (k === 'F11' && e.shiftKey && !isCsv) { addSheet(); return true; }
     if (k === 'Delete' || k === 'Backspace') { edit((s) => clearRange(s, range)); return true; }
-    if (k === 'Escape') { setBar(null); return true; }
+    if (k === 'Escape') { setBar(null); if (painting) { paintRef.current = null; setPainting(false); } return true; }
     if (k === 'PageDown' || k === 'PageUp') { extendOrMove({ r: f.r + (k === 'PageDown' ? 20 : -20), c: f.c }); return true; }
     if (k === 'Home') { extendOrMove({ r: f.r, c: 0 }); return true; }
     if (k.length === 1 && !e.altKey) { startEdit(k); return true; }
@@ -330,36 +363,47 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       { label: 'Reset session edits', run: reset }, sep, { label: 'Quit', keys: 'Ctrl+Q', run: () => desktop()?.windowControl?.('close') },
     ] },
     { label: 'Edit', items: [
-      { label: 'Undo', keys: 'Ctrl+Z', disabled: !h.canUndo, run: h.undo }, { label: 'Redo', keys: 'Ctrl+Shift+Z', disabled: !h.canRedo, run: h.redo }, sep,
-      { label: 'Cut', keys: 'Ctrl+X', run: () => menuClip('cut') }, { label: 'Copy', keys: 'Ctrl+C', run: () => menuClip('copy') }, { label: 'Paste', keys: 'Ctrl+V', run: () => menuClip('paste') }, sep,
-      { label: 'Clear values', keys: 'Delete', run: () => edit((s) => clearRange(s, range)) }, { label: 'Clear values and formats', run: () => edit((s) => clearRange(s, range, true)) }, sep,
-      { label: 'Find and replace…', keys: 'Ctrl+F', run: () => setFind((f0) => f0 ?? { q: '', rep: '', matchCase: false, wholeCell: false, idx: 0 }) }, sep,
+      { label: 'Undo', keys: 'Ctrl+Z', disabled: !h.canUndo, run: h.undo }, { label: 'Redo', keys: 'Ctrl+Y', disabled: !h.canRedo, run: h.redo }, sep,
+      { label: 'Cut', keys: 'Ctrl+X', run: () => menuClip('cut') }, { label: 'Copy', keys: 'Ctrl+C', run: () => menuClip('copy') }, { label: 'Paste', keys: 'Ctrl+V', run: () => menuClip('paste') },
+      { label: 'Paste special', sub: [{ label: 'Values only', keys: 'Ctrl+Shift+V', run: () => pasteSpecial('values') }, { label: 'Formatting only', keys: 'Ctrl+Alt+V', run: () => pasteSpecial('format') }] }, sep,
+      { label: 'Delete', sub: [{ label: 'Values', keys: 'Delete', run: () => edit((s) => clearRange(s, range)) }, { label: 'Row', run: () => edit((s) => deleteRows(s, rowsSel.from, rowsSel.to)) }, { label: 'Column', run: () => edit((s) => deleteCols(s, colsSel.from, colsSel.to)) }] }, sep,
+      { label: 'Find and replace', keys: 'Ctrl+H', run: () => setFind((f0) => f0 ?? { q: '', rep: '', matchCase: false, wholeCell: false, idx: 0 }) }, sep,
       { label: 'Fill down', keys: 'Ctrl+D', run: () => edit((s) => fill(s, range, 'down')) }, { label: 'Fill right', keys: 'Ctrl+R', run: () => edit((s) => fill(s, range, 'right')) }, { label: 'Select all', keys: 'Ctrl+A', run: () => setSel({ anchor: { r: 0, c: 0 }, focus: { r: Math.max(0, ext.rows - 1), c: Math.max(0, ext.cols - 1) } }) },
     ] },
-    { label: 'View', items: [...(isCsv ? [] : [{ label: 'Freeze', sub: [
-      { label: 'No frozen rows or columns', check: !sheet.freeze, run: () => freeze(0, 0) }, sep,
-      { label: '1 row', check: sheet.freeze?.rows === 1 && !sheet.freeze.cols, run: () => freeze(1, 0) }, { label: '2 rows', check: sheet.freeze?.rows === 2 && !sheet.freeze.cols, run: () => freeze(2, 0) }, { label: `Up to row ${active.r + 1}`, run: () => freeze(active.r + 1, sheet.freeze?.cols ?? 0) }, sep,
-      { label: '1 column', check: sheet.freeze?.cols === 1 && !sheet.freeze.rows, run: () => freeze(0, 1) }, { label: '2 columns', check: sheet.freeze?.cols === 2 && !sheet.freeze.rows, run: () => freeze(0, 2) }, { label: `Up to column ${colLetter(active.c)}`, run: () => freeze(sheet.freeze?.rows ?? 0, active.c + 1) },
-    ] } as MenuItem, sep]), { label: 'Zoom in', run: () => setZoom(Math.min(300, zoom + 10)) }, { label: 'Zoom out', run: () => setZoom(Math.max(50, zoom - 10)) }, { label: 'Reset zoom', run: () => setZoom(100) }, sep, { label: 'Full screen', keys: 'F11', run: () => desktop()?.windowControl?.('fullscreen') }] },
+    { label: 'View', items: [
+      ...(isCsv ? [] : [{ label: 'Freeze', sub: [
+        { label: 'No rows', check: !sheet.freeze?.rows, run: () => freeze(0, sheet.freeze?.cols ?? 0) }, { label: '1 row', check: sheet.freeze?.rows === 1, run: () => freeze(1, sheet.freeze?.cols ?? 0) }, { label: '2 rows', check: sheet.freeze?.rows === 2, run: () => freeze(2, sheet.freeze?.cols ?? 0) }, { label: `Up to row ${active.r + 1}`, run: () => freeze(active.r + 1, sheet.freeze?.cols ?? 0) }, sep,
+        { label: 'No columns', check: !sheet.freeze?.cols, run: () => freeze(sheet.freeze?.rows ?? 0, 0) }, { label: '1 column', check: sheet.freeze?.cols === 1, run: () => freeze(sheet.freeze?.rows ?? 0, 1) }, { label: '2 columns', check: sheet.freeze?.cols === 2, run: () => freeze(sheet.freeze?.rows ?? 0, 2) }, { label: `Up to column ${colLetter(active.c)}`, run: () => freeze(sheet.freeze?.rows ?? 0, active.c + 1) },
+      ] } as MenuItem, sep]),
+      { label: 'Zoom', sub: [50, 75, 90, 100, 125, 150, 200].map((z): MenuItem => ({ label: `${z}%`, check: zoom === z, run: () => setZoomPct(z) })) }, sep,
+      { label: 'Full screen', keys: 'F11', run: () => desktop()?.windowControl?.('fullscreen') },
+    ] },
     { label: 'Insert', items: [
-      { label: 'Row above', run: () => { edit((s) => insertRows(s, range.r1, range.r2 - range.r1 + 1)); } }, { label: 'Row below', run: () => { edit((s) => insertRows(s, range.r2 + 1, range.r2 - range.r1 + 1)); } },
-      { label: 'Column left', run: () => { edit((s) => insertCols(s, range.c1, range.c2 - range.c1 + 1)); } }, { label: 'Column right', run: () => { edit((s) => insertCols(s, range.c2 + 1, range.c2 - range.c1 + 1)); } }, sep,
-      ...(isCsv ? [] : [{ label: 'Link…', keys: 'Ctrl+K', run: openLinkDlg } as MenuItem, { label: 'Remove link', disabled: !activeCell?.link, run: () => edit((s0) => setLink(s0, range, undefined)) } as MenuItem, { label: 'Chart…', run: () => openChartDlg() } as MenuItem, ...(chartSel ? [{ label: 'Edit the selected chart…', run: () => openChartDlg(chartSel) } as MenuItem, { label: 'Delete the selected chart', run: () => deleteChart(chartSel) } as MenuItem] : []), sep]),
-      { label: 'Delete row(s)', run: () => edit((s) => deleteRows(s, rowsSel.from, rowsSel.to)) }, { label: 'Delete column(s)', run: () => edit((s) => deleteCols(s, colsSel.from, colsSel.to)) }, ...(isCsv ? [] : [sep, { label: 'New sheet', run: addSheet } as MenuItem]),
+      { label: 'Row above', run: () => edit((s) => insertRows(s, range.r1, range.r2 - range.r1 + 1)) }, { label: 'Row below', run: () => edit((s) => insertRows(s, range.r2 + 1, range.r2 - range.r1 + 1)) },
+      { label: 'Column left', run: () => edit((s) => insertCols(s, range.c1, range.c2 - range.c1 + 1)) }, { label: 'Column right', run: () => edit((s) => insertCols(s, range.c2 + 1, range.c2 - range.c1 + 1)) },
+      ...(isCsv ? [] : [sep, { label: 'Sheet', keys: 'Shift+F11', run: addSheet } as MenuItem, sep,
+        { label: 'Chart', run: () => openChartDlg() } as MenuItem, ...(chartSel ? [{ label: 'Edit the selected chart…', run: () => openChartDlg(chartSel) } as MenuItem, { label: 'Delete the selected chart', run: () => deleteChart(chartSel) } as MenuItem] : []),
+        { label: 'Link', keys: 'Ctrl+K', run: openLinkDlg } as MenuItem, { label: 'Remove link', disabled: !activeCell?.link, run: () => edit((s0) => setLink(s0, range, undefined)) } as MenuItem, { label: 'Dropdown', run: openDvDlg } as MenuItem]),
     ] },
     { label: 'Format', items: [
-      { label: 'Bold', keys: 'Ctrl+B', check: allHave(sheet, range, 'b'), run: () => toggle('b') }, { label: 'Italic', keys: 'Ctrl+I', check: allHave(sheet, range, 'i'), run: () => toggle('i') }, { label: 'Underline', keys: 'Ctrl+U', check: allHave(sheet, range, 'u'), run: () => toggle('u') }, sep,
-      { label: 'Align left', run: () => apply({ align: 'left' }) }, { label: 'Align centre', run: () => apply({ align: 'center' }) }, { label: 'Align right', run: () => apply({ align: 'right' }) }, { label: 'Wrap text', check: !!activeCell?.s?.wrap, run: () => apply({ wrap: !activeCell?.s?.wrap }) }, sep,
-      { label: 'Number format', sub: nfItems }, { label: 'More decimal places', run: () => decimals(1) }, { label: 'Fewer decimal places', run: () => decimals(-1) }, sep,
-      { label: 'Vertical align', sub: (['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: v[0].toUpperCase() + v.slice(1), check: activeCell?.s?.va === v, run: () => apply({ va: v }) })) },
+      { label: 'Number', sub: [...nfItems, sep, { label: 'Increase decimal places', run: () => decimals(1) }, { label: 'Decrease decimal places', run: () => decimals(-1) }] },
+      { label: 'Text', sub: [{ label: 'Bold', keys: 'Ctrl+B', check: allHave(sheet, range, 'b'), run: () => toggle('b') }, { label: 'Italic', keys: 'Ctrl+I', check: allHave(sheet, range, 'i'), run: () => toggle('i') }, { label: 'Underline', keys: 'Ctrl+U', check: allHave(sheet, range, 'u'), run: () => toggle('u') }, { label: 'Strikethrough', keys: 'Alt+Shift+5', check: allHave(sheet, range, 'st'), run: () => toggle('st') }] },
+      { label: 'Alignment', sub: [{ label: 'Left', check: activeCell?.s?.align === 'left', run: () => apply({ align: 'left' }) }, { label: 'Center', check: activeCell?.s?.align === 'center', run: () => apply({ align: 'center' }) }, { label: 'Right', check: activeCell?.s?.align === 'right', run: () => apply({ align: 'right' }) }, sep,
+        ...(['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: v[0].toUpperCase() + v.slice(1), check: activeCell?.s?.va === v, run: () => apply({ va: v }) }))] },
+      { label: 'Wrapping', sub: [{ label: 'Overflow', check: !activeCell?.s?.wrap, run: () => apply({ wrap: false }) }, { label: 'Wrap', check: !!activeCell?.s?.wrap, run: () => apply({ wrap: true }) }] },
+      { label: 'Merge cells', sub: [
+        { label: 'Merge all', run: () => edit((s) => mergeRange(s, range)) },
+        { label: 'Merge horizontally', run: () => edit((s) => { let o = s; for (let r = range.r1; r <= range.r2; r++) o = mergeRange(o, { ...range, r1: r, r2: r }); return o; }) },
+        { label: 'Merge vertically', run: () => edit((s) => { let o = s; for (let c = range.c1; c <= range.c2; c++) o = mergeRange(o, { ...range, c1: c, c2: c }); return o; }) },
+        { label: 'Unmerge', run: () => edit((s) => unmergeRange(s, range)) }] },
       { label: 'Borders', sub: BORDER_MODES.map(([m, l]): MenuItem => ({ label: l, run: () => borders(m) })) }, sep,
-      { label: 'Merge cells', run: () => edit((s) => mergeRange(s, range)) }, { label: 'Unmerge cells', run: () => edit((s) => unmergeRange(s, range)) }, sep,
-      ...(isCsv ? [] : [{ label: 'Conditional formatting…', run: openCfDlg } as MenuItem, sep]),
-      { label: 'Fit column width to the text', run: () => { for (let c = range.c1; c <= range.c2; c++) autoFit(c); } }, { label: 'Clear formatting', run: () => edit((s) => { let o = s; for (let r = range.r1; r <= range.r2; r++) for (let c = range.c1; c <= range.c2; c++) { const cell = o.cells[key(r, c)]; if (cell?.s) o = setMany(o, { r, c }, [[{ ...cell, s: undefined }]]); } return o; }) },
+      ...(isCsv ? [] : [{ label: 'Conditional formatting', run: openCfDlg } as MenuItem, sep]),
+      { label: 'Fit column width to the text', run: () => { for (let c = range.c1; c <= range.c2; c++) autoFit(c); } },
+      { label: 'Clear formatting', keys: 'Ctrl+\\', run: clearFormatting },
     ] },
     { label: 'Data', items: [
-      { label: 'Sort A → Z by this column', run: () => sortBy(true) }, { label: 'Sort Z → A by this column', run: () => sortBy(false) }, { label: 'The first row is a header', check: header, run: () => setHeader(!header) },
-      ...(isCsv ? [] : [sep, { label: sheet.filter ? 'Remove the filter' : 'Create a filter', run: () => (sheet.filter ? dropFilter() : makeFilter()) } as MenuItem, { label: 'Data validation…', run: openDvDlg } as MenuItem]),
+      { label: `Sort sheet by column ${colLetter(active.c)}, A → Z`, run: () => sortBy(true) }, { label: `Sort sheet by column ${colLetter(active.c)}, Z → A`, run: () => sortBy(false) }, { label: 'Data has header row', check: header, run: () => setHeader(!header) },
+      ...(isCsv ? [] : [sep, { label: sheet.filter ? 'Remove filter' : 'Create a filter', run: () => (sheet.filter ? dropFilter() : makeFilter()) } as MenuItem, { label: 'Data validation', run: openDvDlg } as MenuItem]),
     ] },
   ];
 
@@ -367,12 +411,12 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
     const rowsN = range.r2 - range.r1 + 1, colsN = range.c2 - range.c1 + 1;
     const rowItems: MenuItem[] = [{ label: `Insert ${rowsN} row${rowsN > 1 ? 's' : ''} above`, run: () => edit((s0) => insertRows(s0, range.r1, rowsN)) }, { label: `Insert ${rowsN} row${rowsN > 1 ? 's' : ''} below`, run: () => edit((s0) => insertRows(s0, range.r2 + 1, rowsN)) }, { label: `Delete row${rowsN > 1 ? 's' : ''}`, run: () => edit((s0) => deleteRows(s0, rowsSel.from, rowsSel.to)) }];
     const colItems: MenuItem[] = [{ label: `Insert ${colsN} column${colsN > 1 ? 's' : ''} left`, run: () => edit((s0) => insertCols(s0, range.c1, colsN)) }, { label: `Insert ${colsN} column${colsN > 1 ? 's' : ''} right`, run: () => edit((s0) => insertCols(s0, range.c2 + 1, colsN)) }, { label: `Delete column${colsN > 1 ? 's' : ''}`, run: () => edit((s0) => deleteCols(s0, colsSel.from, colsSel.to)) }];
-    const clipItems: MenuItem[] = [{ label: 'Cut', keys: 'Ctrl+X', run: () => menuClip('cut') }, { label: 'Copy', keys: 'Ctrl+C', run: () => menuClip('copy') }, { label: 'Paste', keys: 'Ctrl+V', run: () => menuClip('paste') }];
+    const clipItems: MenuItem[] = [{ label: 'Cut', keys: 'Ctrl+X', run: () => menuClip('cut') }, { label: 'Copy', keys: 'Ctrl+C', run: () => menuClip('copy') }, { label: 'Paste', keys: 'Ctrl+V', run: () => menuClip('paste') }, { label: 'Paste special', sub: [{ label: 'Values only', keys: 'Ctrl+Shift+V', run: () => pasteSpecial('values') }, { label: 'Formatting only', keys: 'Ctrl+Alt+V', run: () => pasteSpecial('format') }] }];
     const frozen: MenuItem[] = isCsv ? [] : [sep, { label: `Freeze up to row ${active.r + 1}`, run: () => freeze(active.r + 1, sheet.freeze?.cols ?? 0) }, { label: `Freeze up to column ${colLetter(active.c)}`, run: () => freeze(sheet.freeze?.rows ?? 0, active.c + 1) }, { label: 'Unfreeze', disabled: !sheet.freeze, run: () => freeze(0, 0) }];
     const clear: MenuItem = { label: 'Clear values', keys: 'Delete', run: () => edit((s0) => clearRange(s0, range)) };
     if (kind === 'col') return [...clipItems, sep, ...colItems, sep, clear, { label: 'Sort A → Z', run: () => sortBy(true) }, { label: 'Sort Z → A', run: () => sortBy(false) }, { label: 'Fit width to the text', run: () => { for (let c = range.c1; c <= range.c2; c++) autoFit(c); } }, ...frozen];
     if (kind === 'row') return [...clipItems, sep, ...rowItems, sep, clear, ...frozen];
-    return [...clipItems, sep, ...rowItems, ...colItems, sep, clear, { label: 'Clear values and formats', run: () => edit((s0) => clearRange(s0, range, true)) }, { label: 'Merge cells', disabled: range.r1 === range.r2 && range.c1 === range.c2, run: () => edit((s0) => mergeRange(s0, range)) }, sep, { label: 'Sort A → Z by this column', run: () => sortBy(true) }, { label: 'Sort Z → A by this column', run: () => sortBy(false) }, ...frozen];
+    return [...clipItems, sep, ...rowItems, ...colItems, sep, ...(isCsv ? [] : [{ label: 'Insert link', keys: 'Ctrl+K', run: openLinkDlg } as MenuItem, { label: 'Dropdown', run: openDvDlg } as MenuItem, sep]), clear, { label: 'Clear values and formats', run: () => edit((s0) => clearRange(s0, range, true)) }, { label: 'Merge cells', disabled: range.r1 === range.r2 && range.c1 === range.c2, run: () => edit((s0) => mergeRange(s0, range)) }, sep, { label: 'Sort A → Z by this column', run: () => sortBy(true) }, { label: 'Sort Z → A by this column', run: () => sortBy(false) }, ...frozen];
   };
   const st = useMemo(() => (range.r1 === range.r2 && range.c1 === range.c2 ? null : stats(sheet, range)), [sheet, range.r1, range.r2, range.c1, range.c2]); // eslint-disable-line react-hooks/exhaustive-deps
   const num = (n: number) => String(Number(n.toPrecision(10)));
@@ -396,7 +440,17 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
       )}
       <div role="toolbar" aria-label="Formatting" className="tb-bar bt-top flex flex-wrap items-center gap-px px-2 py-1">
         <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
-        <Btn label="Redo (Ctrl+Shift+Z)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
+        <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
+        <Btn label="Paint format" active={painting} onClick={startPaint}><Paintbrush size={16} /></Btn>
+        <select aria-label="Zoom" className="input !w-[4.5rem] !px-1 !py-1 text-sm" value={String([50, 75, 90, 100, 125, 150, 200].includes(zoom) ? zoom : 100)} onChange={(e) => setZoomPct(Number(e.target.value))}>{[50, 75, 90, 100, 125, 150, 200].map((z) => <option key={z} value={z}>{z}%</option>)}</select>
+        <Sep />
+        <Btn label="Format as currency (Ctrl+Shift+4)" onClick={() => apply({ nf: '"$"#,##0.00' })}><DollarSign size={16} /></Btn>
+        <Btn label="Format as percent (Ctrl+Shift+5)" onClick={() => apply({ nf: '0%' })}><Percent size={16} /></Btn>
+        <Btn label="Decrease decimal places" onClick={() => decimals(-1)}><span className="text-xs tabular-nums">.0←</span></Btn>
+        <Btn label="Increase decimal places" onClick={() => decimals(1)}><span className="text-xs tabular-nums">.00→</span></Btn>
+        <select aria-label="Number format" className="input !w-36 !py-1 text-sm" value={NUMBER_FORMATS.find((n) => n.code === (activeCell?.s?.nf ?? null))?.label ?? 'Automatic'} onChange={(e) => setNf(NUMBER_FORMATS.find((n) => n.label === e.target.value)?.code ?? null)}>
+          {NUMBER_FORMATS.map((n) => <option key={n.label}>{n.label}</option>)}
+        </select>
         <Sep />
         <FontBox value={activeCell?.s?.font ?? 'Calibri'} onPick={(f) => apply({ font: f })} />
         <input aria-label="Font size" list="sheet-font-sizes" className="input !w-14 !px-1 !py-1 text-center text-sm" inputMode="decimal" value={sizeText ?? String(size)}
@@ -407,33 +461,28 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
         <Btn label="Bold (Ctrl+B)" active={allHave(sheet, range, 'b')} onClick={() => toggle('b')}><Bold size={16} /></Btn>
         <Btn label="Italic (Ctrl+I)" active={allHave(sheet, range, 'i')} onClick={() => toggle('i')}><Italic size={16} /></Btn>
         <Btn label="Underline (Ctrl+U)" active={allHave(sheet, range, 'u')} onClick={() => toggle('u')}><Underline size={16} /></Btn>
+        <Btn label="Strikethrough (Alt+Shift+5)" active={allHave(sheet, range, 'st')} onClick={() => toggle('st')}><Strikethrough size={16} /></Btn>
         <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => apply({ color: c })} onPick={(c) => { setTextColour(c); apply({ color: c }); }} />
+        <Sep />
         <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => apply({ fill: c })} onPick={(c) => { setFillColour(c); apply({ fill: c }); }} />
-        <Sep />
-        <Btn label="Align top" active={activeCell?.s?.va === 'top'} onClick={() => apply({ va: 'top' })}><AlignVerticalJustifyStart size={16} /></Btn>
-        <Btn label="Align middle" active={activeCell?.s?.va === 'middle'} onClick={() => apply({ va: 'middle' })}><AlignVerticalJustifyCenter size={16} /></Btn>
-        <Btn label="Align bottom" active={activeCell?.s?.va === 'bottom'} onClick={() => apply({ va: 'bottom' })}><AlignVerticalJustifyEnd size={16} /></Btn>
-        <Btn label="Align left" active={activeCell?.s?.align === 'left'} onClick={() => apply({ align: 'left' })}><AlignLeft size={16} /></Btn>
-        <Btn label="Align centre" active={activeCell?.s?.align === 'center'} onClick={() => apply({ align: 'center' })}><AlignCenter size={16} /></Btn>
-        <Btn label="Align right" active={activeCell?.s?.align === 'right'} onClick={() => apply({ align: 'right' })}><AlignRight size={16} /></Btn>
-        <Btn label="Wrap text" active={!!activeCell?.s?.wrap} onClick={() => apply({ wrap: !activeCell?.s?.wrap })}><WrapText size={16} /></Btn>
-        <Btn label={merged ? 'Unmerge cells' : 'Merge cells'} active={merged} onClick={() => edit((s) => (merged ? unmergeRange(s, range) : mergeRange(s, range)))}><Merge size={16} /></Btn>
-        <Sep />
         <select aria-label="Borders" className="input !w-20 !px-1 !py-1 text-sm" value="" title="Borders (uses the style and colour beside it)" onChange={(e) => { if (e.target.value) borders(e.target.value as BorderMode); e.target.value = ''; }}>
           <option value="">▦ Borders</option>{BORDER_MODES.map(([m, l]) => <option key={m} value={m}>{l}</option>)}
         </select>
         <select aria-label="Border style" className="input !w-20 !px-1 !py-1 text-sm" value={borderStyle} onChange={(e) => setBorderStyle(e.target.value as Edge['st'])}>{BORDER_STYLES.map((b) => <option key={b} value={b}>{b}</option>)}</select>
         <SplitColour label="Border colour" icon={<Grid3x3 size={15} />} last={borderColour} onApply={(c) => setBorderColour(c)} onPick={(c) => setBorderColour(c)} />
+        <Btn label={merged ? 'Unmerge cells' : 'Merge cells'} active={merged} onClick={() => edit((s) => (merged ? unmergeRange(s, range) : mergeRange(s, range)))}><Merge size={16} /></Btn>
         <Sep />
-        <Btn label="Format as currency" onClick={() => apply({ nf: '"$"#,##0.00' })}><DollarSign size={16} /></Btn>
-        <Btn label="Format as percent" onClick={() => apply({ nf: '0%' })}><Percent size={16} /></Btn>
-        <Btn label="Fewer decimal places" onClick={() => decimals(-1)}><span className="text-xs tabular-nums">.0←</span></Btn>
-        <Btn label="More decimal places" onClick={() => decimals(1)}><span className="text-xs tabular-nums">.00→</span></Btn>
-        <select aria-label="Number format" className="input !w-44 !py-1 text-sm" value={NUMBER_FORMATS.find((n) => n.code === (activeCell?.s?.nf ?? null))?.label ?? 'Automatic'} onChange={(e) => setNf(NUMBER_FORMATS.find((n) => n.label === e.target.value)?.code ?? null)}>
-          {NUMBER_FORMATS.map((n) => <option key={n.label}>{n.label}</option>)}
-        </select>
+        <Btn label="Align left" active={activeCell?.s?.align === 'left'} onClick={() => apply({ align: 'left' })}><AlignLeft size={16} /></Btn>
+        <Btn label="Align center" active={activeCell?.s?.align === 'center'} onClick={() => apply({ align: 'center' })}><AlignCenter size={16} /></Btn>
+        <Btn label="Align right" active={activeCell?.s?.align === 'right'} onClick={() => apply({ align: 'right' })}><AlignRight size={16} /></Btn>
+        <Btn label="Align top" active={activeCell?.s?.va === 'top'} onClick={() => apply({ va: 'top' })}><AlignVerticalJustifyStart size={16} /></Btn>
+        <Btn label="Align middle" active={activeCell?.s?.va === 'middle'} onClick={() => apply({ va: 'middle' })}><AlignVerticalJustifyCenter size={16} /></Btn>
+        <Btn label="Align bottom" active={activeCell?.s?.va === 'bottom'} onClick={() => apply({ va: 'bottom' })}><AlignVerticalJustifyEnd size={16} /></Btn>
+        <Btn label="Wrap text" active={!!activeCell?.s?.wrap} onClick={() => apply({ wrap: !activeCell?.s?.wrap })}><WrapText size={16} /></Btn>
         <Sep />
+        {!isCsv && <Btn label="Insert link (Ctrl+K)" active={!!activeCell?.link} onClick={openLinkDlg}><Link2 size={16} /></Btn>}
         {!isCsv && <Btn label="Insert chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>}
+        {!isCsv && <Btn label={sheet.filter ? 'Remove filter' : 'Create a filter'} active={!!sheet.filter} onClick={() => (sheet.filter ? dropFilter() : makeFilter())}><Filter size={16} /></Btn>}
         <Btn label="Sort A to Z by this column" onClick={() => sortBy(true)}><ArrowDownAZ size={16} /></Btn>
         <Btn label="Sort Z to A by this column" onClick={() => sortBy(false)}><ArrowUpAZ size={16} /></Btn>
       </div>
@@ -444,7 +493,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); finish({ pos: active, text: barText, typed: false }, 'down'); setBar(null); } else if (e.key === 'Escape') { setBar(null); grid.current?.focus(); } }} onBlur={() => setBar(null)} />
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <Grid ref={grid} sheet={sheet} rows={rows} cols={cols} zoom={zoom} sel={sel} onSel={(s) => { setSel(s); setBar(null); }} editing={editing} setEditing={setEditing} onCommit={(p, t, m) => finish({ pos: p, text: t, typed: false }, m)}
+        <Grid ref={grid} sheet={sheet} rows={rows} cols={cols} zoom={zoom} sel={sel} onSel={(s) => { setSel(s); setBar(null); if (paintRef.current) paintRef.current.last = s; }} editing={editing} setEditing={setEditing} onCommit={(p, t, m) => finish({ pos: p, text: t, typed: false }, m)}
           onKey={onKey} onResize={(kind, i, size) => edit((s) => (kind === 'col' ? { ...s, colW: { ...s.colW, [i]: size } } : { ...s, rowH: { ...s.rowH, [i]: size } }))} onCopy={doCopy} onPaste={doPaste}
           cf={cfEval} hidden={hidden} filterHeads={sheet.filter ? { r: sheet.filter.range.r1, c1: sheet.filter.range.c1, c2: sheet.filter.range.c2, active: new Set(Object.keys(sheet.filter.show).map(Number)) } : null} listCell={(() => { const v = validationAt(sheet, active.r, active.c); return v?.kind === 'list' ? key(active.r, active.c) : null; })()} onLink={openLink} onFilterMenu={(c) => openFilterDlg(c)} onListMenu={(r, c, at) => setListMenu({ at, r, c })}
           chartSel={chartSel} onChartSel={setChartSel} onChartMove={moveChart} onChartEdit={openChartDlg} onFill={onFill} onContext={(c) => setCtx({ at: { x: c.x, y: c.y }, kind: c.kind })} hits={find ? hitSet : undefined} hitNow={hitAt ? key(hitAt.r, hitAt.c) : null} />
@@ -548,11 +597,15 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           </div>
         </Dialog>
       )}
+      {tabMenu && <ContextMenu at={tabMenu.at} items={[
+        { label: 'Delete', disabled: book.sheets.length < 2, run: () => removeSheet(tabMenu.i) }, { label: 'Duplicate', run: () => duplicateSheet(tabMenu.i) }, { label: 'Rename', run: () => setRenaming(tabMenu.i) }, sep,
+        { label: 'Move right', disabled: tabMenu.i >= book.sheets.length - 1, run: () => moveSheet(tabMenu.i, 1) }, { label: 'Move left', disabled: tabMenu.i === 0, run: () => moveSheet(tabMenu.i, -1) },
+      ]} onClose={() => { setTabMenu(null); grid.current?.focus(); }} />}
       {ctx && <ContextMenu at={ctx.at} items={ctxItems(ctx.kind)} onClose={() => { setCtx(null); grid.current?.focus(); }} />}
       <div className="bt-footer flex items-stretch overflow-x-auto border-t border-line" role="tablist" aria-label="Sheets">
         {book.sheets.map((s, i) => renaming === i
           ? <input key={i} autoFocus className="input !w-32 !py-0.5 text-sm" defaultValue={s.name} aria-label="Sheet name" onBlur={(e) => renameSheet(i, e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setRenaming(null); }} />
-          : <button key={i} role="tab" aria-selected={i === book.active} className="sheet-tab" onClick={() => showSheet(i)} onDoubleClick={() => !isCsv && setRenaming(i)} onContextMenu={(e) => { e.preventDefault(); removeSheet(i); }} title={isCsv ? s.name : 'Double-click to rename, right-click to delete'}>{s.name}</button>)}
+          : <button key={i} role="tab" aria-selected={i === book.active} className="sheet-tab" onClick={() => showSheet(i)} onDoubleClick={() => !isCsv && setRenaming(i)} onContextMenu={(e) => { e.preventDefault(); if (!isCsv) { showSheet(i); setTabMenu({ at: { x: e.clientX, y: e.clientY }, i }); } }} title={isCsv ? s.name : 'Double-click to rename, right-click for more'}>{s.name}</button>)}
         {!isCsv && <button type="button" className="btn btn-ghost !px-2 !py-0.5" aria-label="Add sheet" title="Add sheet" onClick={addSheet}><Plus size={14} /></button>}
         <span className="flex-1" />
         <span className="self-center px-3 text-xs text-muted">Formulas are kept, not calculated yet</span>

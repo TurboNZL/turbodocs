@@ -48,7 +48,7 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
 
   // styles
   const fmts = new Map<number, string>();
-  const fonts: { b?: boolean; i?: boolean; u?: boolean; color?: string; name?: string; sz?: number }[] = [];
+  const fonts: { b?: boolean; i?: boolean; u?: boolean; st?: boolean; color?: string; name?: string; sz?: number }[] = [];
   const fills: (string | undefined)[] = [];
   interface Xf { nf?: string; font: number; fill: number; border: number; align?: 'left' | 'center' | 'right'; va?: 'top' | 'middle'; wrap?: boolean }
   const borders: (Borders | undefined)[] = [];
@@ -60,7 +60,7 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
   if (stXml) {
     const st = parse(stXml).documentElement;
     for (const n of kids(kid(st, 'numFmts'), 'numFmt')) fmts.set(Number(n.getAttribute('numFmtId')), n.getAttribute('formatCode') ?? '');
-    for (const f of kids(kid(st, 'fonts'), 'font')) fonts.push({ b: !!kid(f, 'b') && attr(kid(f, 'b'), 'val') !== '0', i: !!kid(f, 'i') && attr(kid(f, 'i'), 'val') !== '0', u: !!kid(f, 'u') && attr(kid(f, 'u'), 'val') !== 'none', color: rgb(kid(f, 'color')), name: attr(kid(f, 'name'), 'val'), sz: Number(attr(kid(f, 'sz'), 'val')) || undefined });
+    for (const f of kids(kid(st, 'fonts'), 'font')) fonts.push({ b: !!kid(f, 'b') && attr(kid(f, 'b'), 'val') !== '0', i: !!kid(f, 'i') && attr(kid(f, 'i'), 'val') !== '0', u: !!kid(f, 'u') && attr(kid(f, 'u'), 'val') !== 'none', st: !!kid(f, 'strike') && attr(kid(f, 'strike'), 'val') !== '0', color: rgb(kid(f, 'color')), name: attr(kid(f, 'name'), 'val'), sz: Number(attr(kid(f, 'sz'), 'val')) || undefined });
     for (const f of kids(kid(st, 'fills'), 'fill')) { const p = kid(f, 'patternFill'); fills.push(p && attr(p, 'patternType') === 'solid' ? rgb(kid(p, 'fgColor')) : undefined); }
     for (const b of kids(kid(st, 'borders'), 'border')) { const o: Borders = {}; const t = edgeOf(kid(b, 'top')), bo = edgeOf(kid(b, 'bottom')), l = edgeOf(kid(b, 'left')) ?? edgeOf(kid(b, 'start')), r = edgeOf(kid(b, 'right')) ?? edgeOf(kid(b, 'end')); if (t) o.t = t; if (bo) o.b = bo; if (l) o.l = l; if (r) o.r = r; borders.push(Object.keys(o).length ? o : undefined); }
     for (const d of kids(kid(st, 'dxfs'), 'dxf')) { const f = kid(d, 'font'), fill = kid(kid(d, 'fill'), 'patternFill'); dxfs.push({ color: rgb(kid(f, 'color')), bold: !!kid(f, 'b') && attr(kid(f, 'b'), 'val') !== '0' ? true : undefined, fill: rgb(kid(fill, 'bgColor')) ?? rgb(kid(fill, 'fgColor')) }); }
@@ -78,7 +78,7 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
     if (!x || s === 0 && !x.nf && !x.align && !x.va) return undefined;
     const f = fonts[x.font] ?? {};
     const o: CellFmt = {};
-    if (f.b) o.b = true; if (f.i) o.i = true; if (f.u) o.u = true;
+    if (f.b) o.b = true; if (f.i) o.i = true; if (f.u) o.u = true; if (f.st) o.st = true;
     if (f.color && f.color !== '#000000') o.color = f.color;
     if (f.name && f.name !== base.name) o.font = f.name;
     if (f.sz && f.sz !== base.sz) o.size = f.sz;
@@ -227,10 +227,10 @@ export async function exportXlsx(book: Workbook): Promise<Uint8Array> {
     const k = JSON.stringify(s);
     const have = fmtIndex.get(k);
     if (have !== undefined) return have;
-    const fk = JSON.stringify([s.b, s.i, s.u, s.color, s.font, s.size]);
+    const fk = JSON.stringify([s.b, s.i, s.u, s.st, s.color, s.font, s.size]);
     let font = 0;
-    if (s.b || s.i || s.u || s.color || s.font || s.size) {
-      if (!fontIdx.has(fk)) { fontIdx.set(fk, fonts.length); fonts.push(`<font>${s.b ? '<b/>' : ''}${s.i ? '<i/>' : ''}${s.u ? '<u/>' : ''}<sz val="${s.size ?? 11}"/>${s.color ? `<color rgb="FF${s.color.slice(1).toUpperCase()}"/>` : ''}<name val="${esc(s.font ?? 'Calibri')}"/><family val="2"/></font>`); }
+    if (s.b || s.i || s.u || s.st || s.color || s.font || s.size) {
+      if (!fontIdx.has(fk)) { fontIdx.set(fk, fonts.length); fonts.push(`<font>${s.b ? '<b/>' : ''}${s.i ? '<i/>' : ''}${s.st ? '<strike/>' : ''}${s.u ? '<u/>' : ''}<sz val="${s.size ?? 11}"/>${s.color ? `<color rgb="FF${s.color.slice(1).toUpperCase()}"/>` : ''}<name val="${esc(s.font ?? 'Calibri')}"/><family val="2"/></font>`); }
       font = fontIdx.get(fk)!;
     }
     let fill = 0;

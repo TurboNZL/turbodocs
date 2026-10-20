@@ -26,11 +26,11 @@ describe('borders', () => {
     let s = setValue(emptySheet('Data'), 0, 0, 'Head');
     s = setBorders(s, { r1: 0, c1: 0, r2: 1, c2: 1 }, 'all', { st: 'medium', c: '#c80000' });
     s = formatRange(s, { r1: 0, c1: 0, r2: 0, c2: 0 }, { va: 'middle', b: true });
-    s = formatRange(s, { r1: 1, c1: 1, r2: 1, c2: 1 }, { va: 'top' });
+    s = formatRange(s, { r1: 1, c1: 1, r2: 1, c2: 1 }, { va: 'top', st: true });
     s = { ...s, freeze: { rows: 2, cols: 1 } };
     const again = (await importXlsx(await exportXlsx({ sheets: [s, { ...emptySheet('Rows'), freeze: { rows: 1, cols: 0 } }, emptySheet('Plain')], active: 0 }))).book;
     expect(again.sheets[0].cells[key(0, 0)].s).toMatchObject({ b: true, va: 'middle', bd: { t: { st: 'medium', c: '#c80000' }, b: { st: 'medium', c: '#c80000' }, l: { st: 'medium', c: '#c80000' }, r: { st: 'medium', c: '#c80000' } } });
-    expect(again.sheets[0].cells[key(1, 1)].s!.va).toBe('top');
+    expect(again.sheets[0].cells[key(1, 1)].s).toMatchObject({ va: 'top', st: true });
     expect(again.sheets[0].freeze).toEqual({ rows: 2, cols: 1 });
     expect(again.sheets[1].freeze).toEqual({ rows: 1, cols: 0 });
     expect(again.sheets[2].freeze).toBeUndefined();
@@ -210,3 +210,17 @@ describe('links, rules and filters', () => {
   });
 });
 const rangeOf = (g: { r1: number; c1: number; r2: number; c2: number }) => `${colName(g.c1)}${g.r1 + 1}:${colName(g.c2)}${g.r2 + 1}`;
+
+import { pasteFormats, setFormat, valuesOf } from '../src/sheets/ops.ts';
+describe('paint format and paste special', () => {
+  it('copy only the look, or only the values', () => {
+    const src = formatRange(setValue(emptySheet('S'), 0, 0, 5), { r1: 0, c1: 0, r2: 0, c2: 0 }, { b: true, fill: '#ff0000' });
+    const painted = setFormat(grid([['x', 'y']]), { r1: 0, c1: 0, r2: 0, c2: 1 }, src.cells[key(0, 0)].s);
+    expect(painted.cells[key(0, 1)]).toEqual({ v: 'y', s: { b: true, fill: '#ff0000' } });
+    expect(setFormat(painted, { r1: 0, c1: 0, r2: 0, c2: 0 }, undefined).cells[key(0, 0)]).toEqual({ v: 'x' });
+    painted.cells[key(0, 0)].s!.b = false; expect(painted.cells[key(0, 1)].s!.b).toBe(true); // each cell has its own copy
+    const pf = pasteFormats(grid([['keep'], ['me']]), { r: 0, c: 0 }, [[{ v: 'ignored', s: { i: true } }]]);
+    expect(pf.cells[key(0, 0)]).toEqual({ v: 'keep', s: { i: true } }); expect(pf.cells[key(1, 0)]).toEqual({ v: 'me' });
+    expect(valuesOf([[{ v: 3, f: 'A1+2', s: { b: true } }]])).toEqual([[{ v: 3 }]]);
+  });
+});
