@@ -40,6 +40,9 @@
 | Ctrl+D / Ctrl+R | Fill down / right |
 | Ctrl+A | Select the data |
 | Ctrl+B / I / U | Bold, italic, underline |
+| Ctrl+F / Ctrl+H | Find and replace (Enter: next match) |
+| Right-click | Cut, copy, paste, insert, delete, sort, freeze |
+| Delete (chart selected) | Remove the chart |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 
 ## Slides
@@ -47,9 +50,14 @@
 |---|---|
 | F5 / Shift+F5 | Present from the start / from this slide |
 | Enter | Edit the selected text box |
-| Delete | Delete the selected object |
-| Arrows (Shift: ×10) | Nudge the selected object |
+| Delete | Delete the selected objects |
+| Arrows (Shift: ×10) | Nudge the selected objects |
+| Shift+click, drag on the background | Add to the selection, select a rectangle |
+| Ctrl+A | Select every object on the slide |
+| Alt (while dragging) | Move without snapping to guides |
+| Shift (while turning) | Turn in steps of 15° |
 | Ctrl+D | Duplicate |
-| Ctrl+C / X / V | Copy, cut, paste an object |
+| Ctrl+C / X / V | Copy, cut, paste objects |
+| Tab (in a table cell) | Next cell |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Esc | Deselect, or leave the show |

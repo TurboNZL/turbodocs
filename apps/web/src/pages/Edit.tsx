@@ -11,7 +11,8 @@ import { importXlsx } from '../sheets/xlsx.ts';
 import { importCsv } from '../sheets/csv.ts';
 import { newWorkbook, type Workbook } from '../sheets/model.ts';
 import { importPptx } from '../slides/pptx.ts';
-import { newDeck, type Deck } from '../slides/model.ts';
+import type { Deck } from '../slides/model.ts';
+import { newDeck } from '../slides/layouts.ts';
 
 type Kind = 'docx' | 'md' | 'txt' | 'xlsx' | 'csv' | 'pptx';
 const EXT: Record<string, Kind> = { '.docx': 'docx', '.md': 'md', '.markdown': 'md', '.txt': 'txt', '.xlsx': 'xlsx', '.csv': 'csv', '.pptx': 'pptx' };

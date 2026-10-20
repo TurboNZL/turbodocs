@@ -1,11 +1,12 @@
 import JSZip from 'jszip';
+import { cellTint } from './tableOps.ts';
 import { DOMParser } from '@xmldom/xmldom';
-import { DEFAULT_SIZE, defaultTextColor, uid, type Deck, type El, type Geometry, type Para, type Run, type Slide, type TextEl } from './model.ts';
+import { DEFAULT_SIZE, defaultTextColor, uid, type Deck, type El, type Geometry, type LineEl, type Para, type Role, type Run, type Slide, type TableEl, type TCell, type TextEl } from './model.ts';
 
 /**
  * .pptx -> Deck. Read straight from the file's XML, like the Word and Excel importers: slides in order, text boxes and placeholders with the position, size,
- * font, colour and bullets they get from their layout, master and theme, rectangles and ellipses with fills, pictures, backgrounds and speaker notes. What it
- * cannot keep (tables, charts, diagrams, animations, video, rotation, other shapes) is listed in `warnings` and is not in the file saved from here.
+ * font, colour, bullets, numbering and line spacing they get from their layout, master and theme, preset shapes with fills, lines and arrows, tables, rotation, pictures,
+ * backgrounds and speaker notes. What it cannot keep (charts, diagrams, animations, video, other shapes) is listed in `warnings` and is not in the file saved from here.
  */
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -20,7 +21,8 @@ const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg
 
 interface Part { el: El_; rels: Map<string, { type: string; target: string }>; path: string }
 interface Theme { colors: Map<string, string>; major: string; minor: string }
-interface Props { size?: number; b?: boolean; i?: boolean; u?: boolean; color?: string; font?: string; align?: Para['align']; bullet?: boolean }
+interface Props { size?: number; b?: boolean; i?: boolean; u?: boolean; color?: string; font?: string; align?: Para['align']; bullet?: boolean; num?: boolean; lh?: number }
+const PRESETS: Record<string, Geometry> = { ellipse: 'ellipse', roundRect: 'roundRect', triangle: 'triangle', diamond: 'diamond', hexagon: 'hexagon', star5: 'star5', rightArrow: 'rightArrow', leftArrow: 'leftArrow' };
 
 const resolvePath = (base: string, target: string): string => {
   if (target.startsWith('/')) return target.slice(1);
@@ -143,7 +145,8 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
       if (out.font === undefined) { const f = kid(d, 'latin')?.getAttribute('typeface'); if (f) out.font = f; }
       const al = p.getAttribute('algn');
       if (out.align === undefined && al) out.align = al === 'ctr' ? 'center' : al === 'r' ? 'right' : al === 'just' ? 'justify' : 'left';
-      if (out.bullet === undefined) { if (kid(p, 'buNone')) out.bullet = false; else if (kid(p, 'buChar') || kid(p, 'buAutoNum')) out.bullet = true; }
+      if (out.bullet === undefined && out.num === undefined) { if (kid(p, 'buNone')) { out.bullet = false; out.num = false; } else if (kid(p, 'buAutoNum')) out.num = true; else if (kid(p, 'buChar')) out.bullet = true; }
+      if (out.lh === undefined) { const sp = kid(p, 'lnSpc', 'spcPct')?.getAttribute('val'); if (sp) out.lh = Number(sp) / 100000; }
     }
     return out;
   };
@@ -158,6 +161,54 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
     if (!f) return null;
     if (!MIME[ext]) { warnings.add(`A picture in the format .${ext} is not shown.`); return null; }
     return `data:${MIME[ext]};base64,${await f.async('base64')}`;
+  };
+
+
+  const readLine = (node: El_, ctx: Ctx, xf: { sx: number; sy: number; dx: number; dy: number }): LineEl | null => {
+    const spPr = kid(node, 'spPr');
+    const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? 'line';
+    if (!/^(line|straightConnector1)$/.test(prst)) return null;
+    const x = kid(spPr, 'xfrm'), off = kid(x, 'off'), ext = kid(x, 'ext');
+    if (!off || !ext) return null;
+    const ln = kid(spPr, 'ln');
+    const fx = x!.getAttribute('flipH') === '1', fy = x!.getAttribute('flipV') === '1';
+    const style = kid(node, 'style');
+    const color = colorIn(kid(ln, 'solidFill'), ctx) ?? colorIn(kid(style, 'lnRef'), ctx) ?? '#000000';
+    const head = kid(ln, 'headEnd')?.getAttribute('type'), tail = kid(ln, 'tailEnd')?.getAttribute('type');
+    const has = (t: string | null | undefined) => !!t && t !== 'none';
+    const dash = kid(ln, 'prstDash')?.getAttribute('val');
+    const rot = Math.round((Number(x!.getAttribute('rot') ?? 0) / 60000) * 10) / 10 % 360;
+    return { id: uid(), kind: 'line', x: (Number(off.getAttribute('x')) * xf.sx + xf.dx) / EMU, y: (Number(off.getAttribute('y')) * xf.sy + xf.dy) / EMU, w: (Number(ext.getAttribute('cx')) * xf.sx) / EMU, h: (Number(ext.getAttribute('cy')) * xf.sy) / EMU,
+      color, width: Math.max(0.5, ln?.getAttribute('w') ? Number(ln.getAttribute('w')) / EMU : 1.33), flipV: fy !== fx, head: fx ? has(tail) : has(head), tail: fx ? has(head) : has(tail), ...(dash && dash !== 'solid' ? { dash: true } : {}), ...(rot ? { rot } : {}) };
+  };
+  const readTable = (frame: El_, tbl: El_, ctx: Ctx, xf: { sx: number; sy: number; dx: number; dy: number }): TableEl => {
+    const off = kid(kid(frame, 'xfrm'), 'off');
+    const cols = kids(kid(tbl, 'tblGrid'), 'gridCol').map((g) => Math.max(20, Math.round((Number(g.getAttribute('w')) * xf.sx) / EMU)));
+    const trs = kids(tbl, 'tr');
+    const rows = trs.map((t) => Math.max(14, Math.round((Number(t.getAttribute('h')) * xf.sy) / EMU)));
+    const pr = kid(tbl, 'tblPr');
+    const accent = ctx.theme.colors.get('accent1') ?? '#1f6f5c';
+    const cells: TCell[][] = trs.map((tr) => {
+      const out: TCell[] = [];
+      for (const tc of kids(tr, 'tc')) {
+        const paras = kids(kid(tc, 'txBody'), 'p');
+        const runEls = paras.flatMap((p) => kids(p, 'r'));
+        const rp = kid(runEls[0], 'rPr');
+        const t = paras.map((p) => kids(p).filter((k) => k.localName === 'r' || k.localName === 'fld' || k.localName === 'br').map((k) => (k.localName === 'br' ? '\n' : kid(k, 't')?.textContent ?? '')).join('')).join('\n');
+        const c: TCell = { t };
+        if (rp?.getAttribute('b') === '1') c.b = true; if (rp?.getAttribute('i') === '1') c.i = true;
+        const col = colorIn(kid(rp, 'solidFill'), ctx); if (col && col !== '#000000') c.color = col;
+        if (rp?.getAttribute('sz')) { const sz = Number(rp.getAttribute('sz')) / 100; if (sz !== 18) c.size = sz; }
+        const fill = colorIn(kid(kid(tc, 'tcPr'), 'solidFill'), ctx); if (fill) c.fill = fill;
+        const al = kid(paras[0], 'pPr')?.getAttribute('algn'); if (al === 'ctr') c.align = 'center'; else if (al === 'r') c.align = 'right';
+        if (tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') warnings.add('Merged table cells are shown unmerged.');
+        out.push(c);
+      }
+      while (out.length < cols.length) out.push({ t: '' });
+      return out.slice(0, cols.length);
+    });
+    return { id: uid(), kind: 'table', x: (Number(off?.getAttribute('x') ?? 0) * xf.sx + xf.dx) / EMU, y: (Number(off?.getAttribute('y') ?? 0) * xf.sy + xf.dy) / EMU, w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0), cols, rows, cells,
+      header: pr?.getAttribute('firstRow') === '1', banded: pr?.getAttribute('bandRow') === '1', accent, border: '#b8bcc2' };
   };
 
   const deck: Deck = { w: W, h: H, font: 'Calibri', slides: [] };
@@ -198,8 +249,18 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
           await place(node, owner, { sx: xf.sx * sx, sy: xf.sy * sy, dx: xf.dx + (Number(off.getAttribute('x')) - Number(cho.getAttribute('x')) * sx) * xf.sx, dy: xf.dy + (Number(off.getAttribute('y')) - Number(cho.getAttribute('y')) * sy) * xf.sy });
           continue;
         }
-        if (n === 'graphicFrame') { warnings.add('Tables, charts and diagrams are not shown (they are not in the file saved from here).'); continue; }
-        if (n === 'cxnSp') { warnings.add('Lines and connectors.'); continue; }
+        if (n === 'graphicFrame') {
+          const tbl = desc(node, 'tbl')[0];
+          const fx = kid(node, 'xfrm'), off = kid(fx, 'off');
+          if (!tbl || !off) { warnings.add('Charts and diagrams are not shown (they are not in the file saved from here).'); continue; }
+          out.els.push(readTable(node, tbl, ctx, xf));
+          continue;
+        }
+        if (n === 'cxnSp' || (n === 'sp' && /^(line|straightConnector1)$/.test(kid(node, 'spPr', 'prstGeom')?.getAttribute('prst') ?? ''))) {
+          const line = readLine(node, ctx, xf);
+          if (line) out.els.push(line); else warnings.add('Curved and elbow connectors.');
+          continue;
+        }
         if (n !== 'sp' && n !== 'pic') continue;
         const ph = n === 'sp' ? phOf(node) : kid(node, 'nvPicPr', 'nvPr', 'ph');
         let f = xfrmOf(node);
@@ -207,23 +268,22 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
         if (!f) f = (lph ? xfrmOf(lph) : undefined) ?? (mph ? xfrmOf(mph) : undefined);
         else f = { x: (f.x * EMU * xf.sx + xf.dx) / EMU, y: (f.y * EMU * xf.sy + xf.dy) / EMU, w: (f.w * EMU * xf.sx) / EMU, h: (f.h * EMU * xf.sy) / EMU };
         if (!f) continue;
-        const rot = Number(kid(node, 'spPr', 'xfrm')?.getAttribute('rot') ?? 0);
-        if (rot) warnings.add('Rotated shapes are shown upright.');
+        const rot = Math.round((Number((kid(node, 'spPr', 'xfrm') ?? kid(node, 'xfrm'))?.getAttribute('rot') ?? 0) / 60000) * 10) / 10 % 360;
         if (n === 'pic') {
           const blip = desc(node, 'blip')[0];
           const src = blip ? await imageOf(owner, blip) : null;
           if (src) {
             const rect = desc(node, 'srcRect')[0];
             if (rect && ['l', 't', 'r', 'b'].some((k) => Number(rect.getAttribute(k)) > 0)) warnings.add('Picture cropping (pictures are shown uncropped).');
-            out.els.push({ id: uid(), kind: 'image', src, alt: desc(node, 'cNvPr')[0]?.getAttribute('descr') || undefined, x: f.x, y: f.y, w: f.w, h: f.h });
+            out.els.push({ id: uid(), kind: 'image', src, alt: desc(node, 'cNvPr')[0]?.getAttribute('descr') || undefined, x: f.x, y: f.y, w: f.w, h: f.h, ...(rot ? { rot } : {}) });
           }
           continue;
         }
         // ---- a shape or text box
         const spPr = kid(node, 'spPr');
         const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? 'rect';
-        const geometry: Geometry | undefined = prst === 'rect' || prst === 'flowChartProcess' ? undefined : prst === 'ellipse' ? 'ellipse' : prst === 'roundRect' ? 'roundRect' : undefined;
-        if (!['rect', 'ellipse', 'roundRect', 'flowChartProcess'].includes(prst) && (kid(spPr, 'solidFill') || kid(spPr, 'ln', 'solidFill'))) warnings.add('Some shapes are drawn as plain rectangles.');
+        const geometry: Geometry | undefined = PRESETS[prst];
+        if (!['rect', 'flowChartProcess', ...Object.keys(PRESETS)].includes(prst) && (kid(spPr, 'solidFill') || kid(spPr, 'ln', 'solidFill'))) warnings.add('Some shapes are drawn as plain rectangles.');
         const fill = colorIn(kid(spPr, 'solidFill'), ctx);
         const lnEl = kid(spPr, 'ln');
         const line = lnEl && !kid(lnEl, 'noFill') ? colorIn(kid(lnEl, 'solidFill'), ctx) : undefined;
@@ -242,7 +302,8 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
           const base = levelProps(lists, lvl, ctx);
           const own: Props = {};
           const al = pPr?.getAttribute('algn'); if (al) own.align = al === 'ctr' ? 'center' : al === 'r' ? 'right' : al === 'just' ? 'justify' : 'left';
-          if (kid(pPr, 'buNone')) own.bullet = false; else if (kid(pPr, 'buChar') || kid(pPr, 'buAutoNum')) own.bullet = true;
+          if (kid(pPr, 'buNone')) { own.bullet = false; own.num = false; } else if (kid(pPr, 'buAutoNum')) { own.num = true; own.bullet = false; } else if (kid(pPr, 'buChar')) { own.bullet = true; own.num = false; }
+          const ownLh = kid(pPr, 'lnSpc', 'spcPct')?.getAttribute('val'); if (ownLh) own.lh = Number(ownLh) / 100000;
           const runs: Run[] = [];
           for (const rEl of kids(p)) {
             if (rEl.localName === 'br') { runs.push({ text: '\n' }); continue; }
@@ -262,15 +323,18 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
             if (font && font !== theme.minor) run.font = font;
             runs.push(run);
           }
-          const bullet = own.bullet ?? base.bullet ?? false;
+          const num = own.num ?? (own.bullet === undefined ? base.num : false) ?? false;
+          const bullet = !num && (own.bullet ?? base.bullet ?? false);
+          const lh = own.lh ?? base.lh;
           const align = own.align ?? base.align;
           // an empty paragraph keeps its size so the line height is right
           if (!runs.length) { const es = kid(p, 'endParaRPr')?.getAttribute('sz'); const sz0 = es ? Number(es) / 100 : base.size; if (sz0) runs.push({ text: '', size: Math.round(sz0 * scale * 10) / 10 }); }
-          paras.push({ runs: runs.filter((r) => r.text !== '' || runs.length === 1), ...(align && align !== 'left' ? { align } : {}), ...(bullet ? { bullet: true } : {}), ...(bullet && lvl ? { level: lvl } : {}) });
+          paras.push({ runs: runs.filter((r) => r.text !== '' || runs.length === 1), ...(align && align !== 'left' ? { align } : {}), ...(bullet ? { bullet: true } : {}), ...(num ? { num: true } : {}), ...((bullet || num) && lvl ? { level: lvl } : {}), ...(lh && Math.abs(lh - 1) > 0.01 ? { lh: Math.round(lh * 100) / 100 } : {}) });
         }
         while (paras.length && paras[paras.length - 1].runs.every((r) => r.text === '')) paras.pop();
         if (!paras.length && !fill && !line) continue;
-        const el: TextEl = { id: uid(), kind: 'text', x: f.x, y: f.y, w: f.w, h: f.h, paras, ...(geometry ? { geometry } : {}), ...(fill ? { fill } : {}), ...(line ? { line } : {}), ...(line && lineW ? { lineW } : {}), ...(anchor === 'ctr' ? { valign: 'middle' as const } : anchor === 'b' ? { valign: 'bottom' as const } : {}) };
+        const role: Role | undefined = phType === 'title' || phType === 'ctrTitle' ? 'title' : phType === 'subTitle' ? 'subtitle' : ph && (phType === 'body' || phType === 'obj' || !phType) ? 'body' : undefined;
+        const el: TextEl = { id: uid(), kind: 'text', x: f.x, y: f.y, w: f.w, h: f.h, paras, ...(rot ? { rot } : {}), ...(role ? { role } : {}), ...(geometry ? { geometry } : {}), ...(fill ? { fill } : {}), ...(line ? { line } : {}), ...(line && lineW ? { lineW } : {}), ...(anchor === 'ctr' ? { valign: 'middle' as const } : anchor === 'b' ? { valign: 'bottom' as const } : {}) };
         out.els.push(el);
       }
     };
@@ -307,9 +371,23 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
     if (s.bg) slide.background = { color: hexOf(s.bg)! };
     for (const e of s.els) {
       const pos = { x: inch(e.x), y: inch(e.y), w: inch(e.w), h: inch(e.h) };
-      if (e.kind === 'image') { slide.addImage({ data: e.src.replace(/^data:/, ''), ...pos, altText: e.alt ?? undefined }); continue; }
-      const shape = e.geometry === 'ellipse' ? pres.ShapeType.ellipse : e.geometry === 'roundRect' ? pres.ShapeType.roundRect : pres.ShapeType.rect;
-      const common = { ...pos, ...(e.fill ? { fill: { color: hexOf(e.fill)! } } : {}), ...(e.line ? { line: { color: hexOf(e.line)!, width: ((e.lineW ?? 1) * 72) / 96 } } : {}) };
+      const rotate = e.rot ? { rotate: e.rot } : {};
+      if (e.kind === 'image') { slide.addImage({ data: e.src.replace(/^data:/, ''), ...pos, ...rotate, altText: e.alt ?? undefined }); continue; }
+      if (e.kind === 'line') {
+        slide.addShape(pres.ShapeType.line, { ...pos, ...rotate, flipV: !!e.flipV, line: { color: hexOf(e.color)!, width: (e.width * 72) / 96, ...(e.dash ? { dashType: 'dash' as const } : {}), ...(e.head ? { beginArrowType: 'triangle' as const } : {}), ...(e.tail ? { endArrowType: 'triangle' as const } : {}) } } as never);
+        continue;
+      }
+      if (e.kind === 'table') {
+        const dark = defaultTextColor(s.bg) === '#ffffff';
+        const rows = e.cells.map((row, r) => row.map((c, ci) => {
+          const fill = c.fill ?? cellTint(e, r, dark), head = e.header && r === 0;
+          return { text: c.t, options: { bold: c.b || head, italic: c.i, color: hexOf(c.color ?? (head ? defaultTextColor(fill) : defaultTextColor(s.bg))), ...(fill ? { fill: { color: hexOf(fill)! } } : {}), align: c.align ?? 'left', valign: 'middle', fontSize: c.size ?? 18, fontFace: deck.font } };
+        }));
+        slide.addTable(rows as never, { ...pos, colW: e.cols.map(inch), rowH: e.rows.map(inch), border: { type: 'solid', pt: 0.75, color: hexOf(e.border)! }, margin: [3, 7.5, 3, 7.5] } as never);
+        continue;
+      }
+      const shape = ((pres.ShapeType as unknown as Record<string, never>)[e.geometry ?? 'rect'] ?? pres.ShapeType.rect);
+      const common = { ...pos, ...rotate, ...(e.fill ? { fill: { color: hexOf(e.fill)! } } : {}), ...(e.line ? { line: { color: hexOf(e.line)!, width: ((e.lineW ?? 1) * 72) / 96 } } : {}) };
       const hasText = e.paras.some((p) => p.runs.some((r) => r.text !== ''));
       if (!hasText) { if (e.fill || e.line) slide.addShape(shape, { ...common, ...(e.fill ? {} : { fill: { type: 'none' } }) }); continue; }
       const items = e.paras.flatMap((p, pi) => {
@@ -318,7 +396,7 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
           text: r.text.replace(/\n/g, ''),
           options: {
             bold: r.b, italic: r.i, underline: r.u ? { style: 'sng' as const } : undefined, color: hexOf(r.color ?? defaultTextColor(s.bg)), fontSize: r.size ?? DEFAULT_SIZE, fontFace: r.font ?? deck.font,
-            ...(ri === 0 ? { align: p.align ?? 'left', ...(p.bullet ? { bullet: true, indentLevel: p.level ?? 0 } : {}) } : {}),
+            ...(ri === 0 ? { align: p.align ?? 'left', ...(p.bullet ? { bullet: true, indentLevel: p.level ?? 0 } : p.num ? { bullet: { type: 'number' as const }, indentLevel: p.level ?? 0 } : {}), ...(p.lh ? { lineSpacingMultiple: p.lh } : {}) } : {}),
             ...(ri === runs.length - 1 && pi < e.paras.length - 1 ? { breakLine: true } : {}),
           },
         }));
