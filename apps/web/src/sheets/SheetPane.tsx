@@ -14,9 +14,13 @@ import { MenuBar, type MenuDef, type MenuItem } from '../components/MenuBar.tsx'
 import { ContextMenu } from '../components/ContextMenu.tsx';
 import { Dialog } from '../components/Dialog.tsx';
 import { FontBox } from '../components/FontBox.tsx';
+import { Select } from '../components/Select.tsx';
+import { OverflowBar } from '../components/OverflowBar.tsx';
+import { ColourField } from '../components/ColourField.tsx';
+import { SizeBox } from '../components/SizeBox.tsx';
 import { Btn, Sep, SplitColour } from '../editor/Toolbar.tsx';
 import { StatusBar } from '../editor/StatusBar.tsx';
-import { DocHeader } from '../editor/DocHeader.tsx';
+import { DocActions, DocTitle } from '../editor/DocHeader.tsx';
 import { useSaver } from '../editor/useSaver.ts';
 import { useAutosave } from '../editor/useAutosave.ts';
 import { SIZES } from '../editor/fonts.ts';
@@ -425,8 +429,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
   const merged = !!mergeAt(sheet, active.r, active.c);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MenuBar menus={menus} label="Spreadsheet menu" />
-      <DocHeader name={saver.name} path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />
+      <MenuBar menus={menus} label="Spreadsheet menu" lead={<DocTitle name={saver.name} path={saver.path} dirty={dirty} />} trail={<DocActions path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />} />
       {autosave.found && (
         <div role="alert" className="tk-expand mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-theme border border-accent bg-accent/10 px-3 py-2 text-sm">
           <span className="flex-1">Unsaved changes from {new Date(autosave.found.at).toLocaleString()} were backed up. Restore them?</span>
@@ -438,54 +441,55 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           <b>Parts of this workbook cannot be edited here:</b> {warnings.join(' ')} <span className="text-muted">Saving writes a new file without them (a copy of the original is kept); use Save as to keep the original untouched.</span>
         </div>
       )}
-      <div role="toolbar" aria-label="Formatting" className="tb-bar bt-top flex flex-wrap items-center gap-px px-2 py-1">
-        <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
-        <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
-        <Btn label="Paint format" active={painting} onClick={startPaint}><Paintbrush size={16} /></Btn>
-        <select aria-label="Zoom" className="input !w-[4.5rem] !px-1 !py-1 text-sm" value={String([50, 75, 90, 100, 125, 150, 200].includes(zoom) ? zoom : 100)} onChange={(e) => setZoomPct(Number(e.target.value))}>{[50, 75, 90, 100, 125, 150, 200].map((z) => <option key={z} value={z}>{z}%</option>)}</select>
-        <Sep />
-        <Btn label="Format as currency (Ctrl+Shift+4)" onClick={() => apply({ nf: '"$"#,##0.00' })}><DollarSign size={16} /></Btn>
-        <Btn label="Format as percent (Ctrl+Shift+5)" onClick={() => apply({ nf: '0%' })}><Percent size={16} /></Btn>
-        <Btn label="Decrease decimal places" onClick={() => decimals(-1)}><span className="text-xs tabular-nums">.0←</span></Btn>
-        <Btn label="Increase decimal places" onClick={() => decimals(1)}><span className="text-xs tabular-nums">.00→</span></Btn>
-        <select aria-label="Number format" className="input !w-36 !py-1 text-sm" value={NUMBER_FORMATS.find((n) => n.code === (activeCell?.s?.nf ?? null))?.label ?? 'Automatic'} onChange={(e) => setNf(NUMBER_FORMATS.find((n) => n.label === e.target.value)?.code ?? null)}>
-          {NUMBER_FORMATS.map((n) => <option key={n.label}>{n.label}</option>)}
-        </select>
-        <Sep />
-        <FontBox value={activeCell?.s?.font ?? 'Calibri'} onPick={(f) => apply({ font: f })} />
-        <input aria-label="Font size" list="sheet-font-sizes" className="input !w-14 !px-1 !py-1 text-center text-sm" inputMode="decimal" value={sizeText ?? String(size)}
-          onFocus={(e) => e.currentTarget.select()} onChange={(e) => setSizeText(e.target.value)} onBlur={() => { const n = Number((sizeText ?? '').replace(',', '.')); if (n >= 1 && n <= 400) apply({ size: n }); setSizeText(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); grid.current?.focus(); } }} />
-        <datalist id="sheet-font-sizes">{SIZES.map((z) => <option key={z} value={z} />)}</datalist>
-        <Sep />
-        <Btn label="Bold (Ctrl+B)" active={allHave(sheet, range, 'b')} onClick={() => toggle('b')}><Bold size={16} /></Btn>
-        <Btn label="Italic (Ctrl+I)" active={allHave(sheet, range, 'i')} onClick={() => toggle('i')}><Italic size={16} /></Btn>
-        <Btn label="Underline (Ctrl+U)" active={allHave(sheet, range, 'u')} onClick={() => toggle('u')}><Underline size={16} /></Btn>
-        <Btn label="Strikethrough (Alt+Shift+5)" active={allHave(sheet, range, 'st')} onClick={() => toggle('st')}><Strikethrough size={16} /></Btn>
-        <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => apply({ color: c })} onPick={(c) => { setTextColour(c); apply({ color: c }); }} />
-        <Sep />
-        <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => apply({ fill: c })} onPick={(c) => { setFillColour(c); apply({ fill: c }); }} />
-        <select aria-label="Borders" className="input !w-20 !px-1 !py-1 text-sm" value="" title="Borders (uses the style and colour beside it)" onChange={(e) => { if (e.target.value) borders(e.target.value as BorderMode); e.target.value = ''; }}>
-          <option value="">▦ Borders</option>{BORDER_MODES.map(([m, l]) => <option key={m} value={m}>{l}</option>)}
-        </select>
-        <select aria-label="Border style" className="input !w-20 !px-1 !py-1 text-sm" value={borderStyle} onChange={(e) => setBorderStyle(e.target.value as Edge['st'])}>{BORDER_STYLES.map((b) => <option key={b} value={b}>{b}</option>)}</select>
-        <SplitColour label="Border colour" icon={<Grid3x3 size={15} />} last={borderColour} onApply={(c) => setBorderColour(c)} onPick={(c) => setBorderColour(c)} />
-        <Btn label={merged ? 'Unmerge cells' : 'Merge cells'} active={merged} onClick={() => edit((s) => (merged ? unmergeRange(s, range) : mergeRange(s, range)))}><Merge size={16} /></Btn>
-        <Sep />
-        <Btn label="Align left" active={activeCell?.s?.align === 'left'} onClick={() => apply({ align: 'left' })}><AlignLeft size={16} /></Btn>
-        <Btn label="Align center" active={activeCell?.s?.align === 'center'} onClick={() => apply({ align: 'center' })}><AlignCenter size={16} /></Btn>
-        <Btn label="Align right" active={activeCell?.s?.align === 'right'} onClick={() => apply({ align: 'right' })}><AlignRight size={16} /></Btn>
-        <Btn label="Align top" active={activeCell?.s?.va === 'top'} onClick={() => apply({ va: 'top' })}><AlignVerticalJustifyStart size={16} /></Btn>
-        <Btn label="Align middle" active={activeCell?.s?.va === 'middle'} onClick={() => apply({ va: 'middle' })}><AlignVerticalJustifyCenter size={16} /></Btn>
-        <Btn label="Align bottom" active={activeCell?.s?.va === 'bottom'} onClick={() => apply({ va: 'bottom' })}><AlignVerticalJustifyEnd size={16} /></Btn>
-        <Btn label="Wrap text" active={!!activeCell?.s?.wrap} onClick={() => apply({ wrap: !activeCell?.s?.wrap })}><WrapText size={16} /></Btn>
-        <Sep />
-        {!isCsv && <Btn label="Insert link (Ctrl+K)" active={!!activeCell?.link} onClick={openLinkDlg}><Link2 size={16} /></Btn>}
-        {!isCsv && <Btn label="Insert chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>}
-        {!isCsv && <Btn label={sheet.filter ? 'Remove filter' : 'Create a filter'} active={!!sheet.filter} onClick={() => (sheet.filter ? dropFilter() : makeFilter())}><Filter size={16} /></Btn>}
-        <Btn label="Sort A to Z by this column" onClick={() => sortBy(true)}><ArrowDownAZ size={16} /></Btn>
-        <Btn label="Sort Z to A by this column" onClick={() => sortBy(false)}><ArrowUpAZ size={16} /></Btn>
-      </div>
+      <OverflowBar label="Formatting" groups={[
+        <>
+          <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
+          <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
+          <Btn label="Paint format" active={painting} onClick={startPaint}><Paintbrush size={16} /></Btn>
+          <Select label="Zoom" className="!w-[4.75rem] !px-1.5 !py-1" value={[50, 75, 90, 100, 125, 150, 200].includes(zoom) ? zoom : 100} options={[50, 75, 90, 100, 125, 150, 200].map((z) => ({ value: z, label: `${z}%` }))} onChange={(v) => setZoomPct(v)} />
+        </>,
+        <>
+          <Btn label="Format as currency (Ctrl+Shift+4)" onClick={() => apply({ nf: '"$"#,##0.00' })}><DollarSign size={16} /></Btn>
+          <Btn label="Format as percent (Ctrl+Shift+5)" onClick={() => apply({ nf: '0%' })}><Percent size={16} /></Btn>
+          <Btn label="Decrease decimal places" onClick={() => decimals(-1)}><span className="text-xs tabular-nums">.0←</span></Btn>
+          <Btn label="Increase decimal places" onClick={() => decimals(1)}><span className="text-xs tabular-nums">.00→</span></Btn>
+          <Select label="Number format" className="!w-32 !py-1" value={NUMBER_FORMATS.find((n) => n.code === (activeCell?.s?.nf ?? null))?.label ?? 'Automatic'} options={NUMBER_FORMATS.map((n) => ({ value: n.label, label: n.label }))} onChange={(v) => setNf(NUMBER_FORMATS.find((n) => n.label === v)?.code ?? null)} />
+        </>,
+        <>
+          <FontBox value={activeCell?.s?.font ?? 'Calibri'} onPick={(f) => apply({ font: f })} />
+          <SizeBox value={size} sizes={SIZES} onCommit={(t) => { const n = Number(t.replace(',', '.')); if (n >= 1 && n <= 400) apply({ size: n }); }} />
+        </>,
+        <>
+          <Btn label="Bold (Ctrl+B)" active={allHave(sheet, range, 'b')} onClick={() => toggle('b')}><Bold size={16} /></Btn>
+          <Btn label="Italic (Ctrl+I)" active={allHave(sheet, range, 'i')} onClick={() => toggle('i')}><Italic size={16} /></Btn>
+          <Btn label="Underline (Ctrl+U)" active={allHave(sheet, range, 'u')} onClick={() => toggle('u')}><Underline size={16} /></Btn>
+          <Btn label="Strikethrough (Alt+Shift+5)" active={allHave(sheet, range, 'st')} onClick={() => toggle('st')}><Strikethrough size={16} /></Btn>
+          <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => apply({ color: c })} onPick={(c) => { setTextColour(c); apply({ color: c }); }} />
+        </>,
+        <>
+          <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => apply({ fill: c })} onPick={(c) => { setFillColour(c); apply({ fill: c }); }} />
+          <Select label="Borders" title="Borders (uses the style and colour beside it)" className="!w-28 !px-1.5 !py-1" display="▦ Borders" options={BORDER_MODES.map(([m, l]) => ({ value: m as string, label: l }))} onChange={(v) => borders(v as BorderMode)} />
+          <Select label="Border style" className="!w-24 !px-1.5 !py-1" value={borderStyle} options={BORDER_STYLES.map((b) => ({ value: b as string, label: b }))} onChange={(v) => setBorderStyle(v as Edge['st'])} />
+          <SplitColour label="Border colour" icon={<Grid3x3 size={15} />} last={borderColour} onApply={(c) => setBorderColour(c)} onPick={(c) => setBorderColour(c)} />
+          <Btn label={merged ? 'Unmerge cells' : 'Merge cells'} active={merged} onClick={() => edit((s) => (merged ? unmergeRange(s, range) : mergeRange(s, range)))}><Merge size={16} /></Btn>
+        </>,
+        <>
+          <Btn label="Align left" active={activeCell?.s?.align === 'left'} onClick={() => apply({ align: 'left' })}><AlignLeft size={16} /></Btn>
+          <Btn label="Align center" active={activeCell?.s?.align === 'center'} onClick={() => apply({ align: 'center' })}><AlignCenter size={16} /></Btn>
+          <Btn label="Align right" active={activeCell?.s?.align === 'right'} onClick={() => apply({ align: 'right' })}><AlignRight size={16} /></Btn>
+          <Btn label="Align top" active={activeCell?.s?.va === 'top'} onClick={() => apply({ va: 'top' })}><AlignVerticalJustifyStart size={16} /></Btn>
+          <Btn label="Align middle" active={activeCell?.s?.va === 'middle'} onClick={() => apply({ va: 'middle' })}><AlignVerticalJustifyCenter size={16} /></Btn>
+          <Btn label="Align bottom" active={activeCell?.s?.va === 'bottom'} onClick={() => apply({ va: 'bottom' })}><AlignVerticalJustifyEnd size={16} /></Btn>
+          <Btn label="Wrap text" active={!!activeCell?.s?.wrap} onClick={() => apply({ wrap: !activeCell?.s?.wrap })}><WrapText size={16} /></Btn>
+        </>,
+        <>
+          {!isCsv && <Btn label="Insert link (Ctrl+K)" active={!!activeCell?.link} onClick={openLinkDlg}><Link2 size={16} /></Btn>}
+          {!isCsv && <Btn label="Insert chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>}
+          {!isCsv && <Btn label={sheet.filter ? 'Remove filter' : 'Create a filter'} active={!!sheet.filter} onClick={() => (sheet.filter ? dropFilter() : makeFilter())}><Filter size={16} /></Btn>}
+          <Btn label="Sort A to Z by this column" onClick={() => sortBy(true)}><ArrowDownAZ size={16} /></Btn>
+          <Btn label="Sort Z to A by this column" onClick={() => sortBy(false)}><ArrowUpAZ size={16} /></Btn>
+        </>,
+      ]} />
       <div className="flex items-center gap-2 border-b border-line px-2 py-1 text-sm">
         <span className="w-20 shrink-0 rounded-theme bg-raised px-2 py-0.5 text-center text-xs tabular-nums" aria-label="Selection">{rangeText(range)}</span>
         <span className="text-muted">ƒ</span>
@@ -542,11 +546,11 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
               <b>Add a rule</b>
               <label className="grid gap-1">Cells <input aria-label="Rule cells" className="input" value={cfDlg.range} onChange={(e) => setCfDlg({ ...cfDlg, range: e.target.value, error: undefined })} /></label>
               <label className="grid gap-1">Format cells if
-                <select aria-label="Rule kind" className="input" value={cfDlg.kind} onChange={(e) => setCfDlg({ ...cfDlg, kind: e.target.value as CfRule['kind'] })}>{CF_KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+                <Select label="Rule kind" className="w-full" value={cfDlg.kind} options={CF_KINDS.map(([k, l]) => ({ value: k as string, label: l }))} onChange={(v) => setCfDlg({ ...cfDlg, kind: v as CfRule['kind'] })} /></label>
               {!['blank', 'notblank', 'scale'].includes(cfDlg.kind) && <div className="flex gap-2"><input aria-label="Rule value" className="input" placeholder={cfDlg.kind === 'text' ? 'Text' : 'Value'} value={cfDlg.v1} onChange={(e) => setCfDlg({ ...cfDlg, v1: e.target.value, error: undefined })} />{cfDlg.kind === 'between' && <input aria-label="Rule second value" className="input" placeholder="and" value={cfDlg.v2} onChange={(e) => setCfDlg({ ...cfDlg, v2: e.target.value, error: undefined })} />}</div>}
               {cfDlg.kind === 'scale'
-                ? <div className="flex items-center gap-3">Lowest <input aria-label="Lowest colour" type="color" value={cfDlg.lo} onChange={(e) => setCfDlg({ ...cfDlg, lo: e.target.value })} /> Highest <input aria-label="Highest colour" type="color" value={cfDlg.hi} onChange={(e) => setCfDlg({ ...cfDlg, hi: e.target.value })} /></div>
-                : <div className="flex items-center gap-3">Fill <input aria-label="Rule fill" type="color" value={cfDlg.fill} onChange={(e) => setCfDlg({ ...cfDlg, fill: e.target.value })} /> Text <input aria-label="Rule text colour" type="color" value={cfDlg.color} onChange={(e) => setCfDlg({ ...cfDlg, color: e.target.value })} /><label className="flex items-center gap-1"><input type="checkbox" checked={cfDlg.bold} onChange={(e) => setCfDlg({ ...cfDlg, bold: e.target.checked })} />Bold</label></div>}
+                ? <div className="flex items-center gap-3">Lowest <ColourField label="Lowest colour" value={cfDlg.lo} onChange={(c) => setCfDlg({ ...cfDlg, lo: c })} /> Highest <ColourField label="Highest colour" value={cfDlg.hi} onChange={(c) => setCfDlg({ ...cfDlg, hi: c })} /></div>
+                : <div className="flex items-center gap-3">Fill <ColourField label="Rule fill" value={cfDlg.fill} onChange={(c) => setCfDlg({ ...cfDlg, fill: c })} /> Text <ColourField label="Rule text colour" value={cfDlg.color} onChange={(c) => setCfDlg({ ...cfDlg, color: c })} /><label className="flex items-center gap-1"><input type="checkbox" checked={cfDlg.bold} onChange={(e) => setCfDlg({ ...cfDlg, bold: e.target.checked })} />Bold</label></div>}
               {cfDlg.error && <p role="alert" className="text-bad">{cfDlg.error}</p>}
               <div><button className="btn btn-accent" onClick={addCf}>Add rule</button></div>
             </div>
@@ -558,7 +562,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           <div className="grid gap-3 text-sm">
             <label className="grid gap-1">Cells <input aria-label="Validation cells" className="input" value={dvDlg.range} onChange={(e) => setDvDlg({ ...dvDlg, range: e.target.value, error: undefined })} /></label>
             <label className="grid gap-1">Allow
-              <select aria-label="Validation kind" className="input" value={dvDlg.kind} onChange={(e) => setDvDlg({ ...dvDlg, kind: e.target.value as NonNullable<typeof dvDlg>['kind'] })}><option value="list">A list of choices</option><option value="source">A list from cells</option><option value="whole">A whole number</option><option value="decimal">A number</option></select></label>
+              <Select label="Validation kind" className="w-full" value={dvDlg.kind} options={[{ value: 'list', label: 'A list of choices' }, { value: 'source', label: 'A list from cells' }, { value: 'whole', label: 'A whole number' }, { value: 'decimal', label: 'A number' }]} onChange={(v) => setDvDlg({ ...dvDlg, kind: v as NonNullable<typeof dvDlg>['kind'] })} /></label>
             {dvDlg.kind === 'list' && <label className="grid gap-1">Choices (separated by commas)<input aria-label="Validation choices" className="input" value={dvDlg.items} onChange={(e) => setDvDlg({ ...dvDlg, items: e.target.value, error: undefined })} /></label>}
             {dvDlg.kind === 'source' && <label className="grid gap-1">Cells holding the choices<input aria-label="Validation source" className="input" placeholder="E2:E9" value={dvDlg.source} onChange={(e) => setDvDlg({ ...dvDlg, source: e.target.value, error: undefined })} /></label>}
             {(dvDlg.kind === 'whole' || dvDlg.kind === 'decimal') && <div className="flex gap-2"><label className="grid flex-1 gap-1">Smallest<input aria-label="Validation smallest" className="input" value={dvDlg.min} onChange={(e) => setDvDlg({ ...dvDlg, min: e.target.value, error: undefined })} /></label><label className="grid flex-1 gap-1">Largest<input aria-label="Validation largest" className="input" value={dvDlg.max} onChange={(e) => setDvDlg({ ...dvDlg, max: e.target.value, error: undefined })} /></label></div>}
@@ -586,7 +590,7 @@ export function SheetPane({ initial, kind, path, name, warnings, csv, onReset }:
           <button className="btn" onClick={() => closeChartDlg()}>Cancel</button><button className="btn btn-accent" onClick={saveChart}>{chartDlg.id ? 'Update' : 'Insert'}</button></>}>
           <div className="grid gap-3 text-sm">
             <label className="grid gap-1">Chart type
-              <select aria-label="Chart type" className="input" value={chartDlg.type} onChange={(e) => setChartDlg({ ...chartDlg, type: e.target.value as ChartType })}>{CHART_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select></label>
+              <Select label="Chart type" className="w-full" value={chartDlg.type} options={CHART_TYPES.map(([t, l]) => ({ value: t as string, label: l }))} onChange={(v) => setChartDlg({ ...chartDlg, type: v as ChartType })} /></label>
             <label className="grid gap-1">Title <input aria-label="Chart title" className="input" value={chartDlg.title} onChange={(e) => setChartDlg({ ...chartDlg, title: e.target.value })} /></label>
             <label className="grid gap-1">Data range <input aria-label="Data range" className="input" value={chartDlg.range} onChange={(e) => setChartDlg({ ...chartDlg, range: e.target.value, error: undefined })} /></label>
             <div className="flex gap-4">

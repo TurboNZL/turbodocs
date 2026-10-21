@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Select } from './Select.tsx';
 import { useSearchParams } from 'react-router-dom';
 import { listGuides } from '../lib/guides.ts';
 import { renderMarkdown } from '../lib/markdown.ts';
@@ -23,7 +24,7 @@ export function GuidesTab() {
   const groups = ['Start', 'Apps'] as const;
   return (
     <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
-      <div className="md:hidden"><select aria-label="Guide" className="input" value={current.name} onChange={(e) => open(e.target.value)}>{guides.map((g) => <option key={g.name} value={g.name}>{g.title}</option>)}</select></div>
+      <div className="md:hidden"><Select label="Guide" className="w-full" value={current.name} options={guides.map((g) => ({ value: g.name, label: g.title }))} onChange={(v) => open(v)} /></div>
       <nav aria-label="Guides" className="hidden space-y-3 md:sticky md:top-0 md:block md:self-start">
         {groups.map((g) => { const items = guides.filter((x) => x.group === g); return items.length ? (
           <div key={g}><div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{g}</div>

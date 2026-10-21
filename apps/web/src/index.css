@@ -104,11 +104,11 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .sheet-wrap { position: relative; flex: 1; min-height: 0; outline: none; user-select: none; background: hsl(var(--bg)); font-size: 13px; }
 .sheet-scroll { position: absolute; inset: 0; overflow: auto; }
 .sheet-body { position: relative; background-color: hsl(var(--bg)); }
-.sheet-cell { position: absolute; padding: 0 6px; line-height: 23px; box-sizing: border-box; border-right: 1px solid hsl(var(--line)); border-bottom: 1px solid hsl(var(--line)); background-color: hsl(var(--bg)); cursor: cell; }
+.sheet-cell { position: absolute; padding: 0 6px; line-height: 20px; box-sizing: border-box; border-right: 1px solid hsl(var(--line)); border-bottom: 1px solid hsl(var(--line)); background-color: hsl(var(--bg)); cursor: cell; }
 .sheet-cell[style*="pre-wrap"] { line-height: 1.25; padding-top: 2px; }
 .sheet-range { position: absolute; pointer-events: none; background: hsl(var(--accent) / 0.12); border: 1px solid hsl(var(--accent) / 0.6); box-sizing: border-box; z-index: 1; }
 .sheet-active { position: absolute; pointer-events: none; border: 2px solid hsl(var(--accent)); box-sizing: border-box; z-index: 2; }
-.sheet-edit { position: absolute; z-index: 4; font: inherit; padding: 0 5px; line-height: 23px; border: 2px solid hsl(var(--accent)); background: hsl(var(--bg)); color: hsl(var(--fg)); outline: none; resize: none; overflow: hidden; box-sizing: border-box; white-space: pre; }
+.sheet-edit { position: absolute; z-index: 4; font: inherit; padding: 0 5px; line-height: 20px; border: 2px solid hsl(var(--accent)); background: hsl(var(--bg)); color: hsl(var(--fg)); outline: none; resize: none; overflow: hidden; box-sizing: border-box; white-space: pre; }
 .sheet-frozen { position: absolute; overflow: hidden; z-index: 3; background: hsl(var(--bg)); }
 .sheet-frozen-top { box-shadow: 0 2px 0 hsl(var(--muted) / 0.6); }
 .sheet-frozen-left { box-shadow: 2px 0 0 hsl(var(--muted) / 0.6); }

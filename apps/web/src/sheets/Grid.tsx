@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { cellText, colName, DEFAULT_COL_W, DEFAULT_ROW_H, isNumeric, key, type Cell, type Edge, type Range, type Sheet } from './model.ts';
+import { cellText, colName, colWidth, rowHeight, isNumeric, key, type Cell, type Edge, type Range, type Sheet } from './model.ts';
 import { formatCell } from './format.ts';
 import { mergeAt } from './ops.ts';
 import { ChartView } from './ChartView.tsx';
@@ -47,8 +47,8 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 900, h: 500 });
-  const colX = useMemo(() => { const a = [0]; for (let c = 0; c < cols; c++) a.push(a[c] + (sheet.colW[c] ?? DEFAULT_COL_W)); return a; }, [cols, sheet.colW]);
-  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (hidden?.has(r) ? 0 : sheet.rowH[r] ?? DEFAULT_ROW_H)); return a; }, [rows, sheet.rowH, hidden]);
+  const colX = useMemo(() => { const a = [0]; for (let c = 0; c < cols; c++) a.push(a[c] + colWidth(sheet, c)); return a; }, [cols, sheet.colW, sheet.defColW]);
+  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (hidden?.has(r) ? 0 : rowHeight(sheet, r))); return a; }, [rows, sheet.rowH, hidden]);
   const fr = Math.min(sheet.freeze?.rows ?? 0, rows), fc = Math.min(sheet.freeze?.cols ?? 0, cols);
   const find = (arr: number[], v: number) => { let lo = 0, hi = arr.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; };
   useImperativeHandle(ref, () => ({
@@ -148,7 +148,7 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
     };
     return (
       <div key={k} className={`sheet-cell${hitNow === k ? ' sheet-hit-now' : hits?.has(k) ? ' sheet-hit' : ''}`} data-r={r} data-c={c} style={style}
-        onPointerDown={(e) => { if (cell?.link && (e.ctrlKey || e.metaKey) && onLink) { e.preventDefault(); onLink(cell.link); return; } down(e, 'cells', spilled.size ? cellAt(e) : { r, c }); }} title={cell?.link ? `${cell.link} (Ctrl+click to open)` : undefined} onContextMenu={(e) => { const p = cellAt(e); context(e, 'cell', p.r, p.c); }} onDoubleClick={(e) => { const p = cellAt(e); if (!editing) setEditing({ pos: p, text: editText(sheet.cells[key(p.r, p.c)]), typed: false }); }}>{va ? <span style={{ overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis' }}>{text}</span> : text}{filterHeads && r === filterHeads.r && c >= filterHeads.c1 && c <= filterHeads.c2 && <span role="button" aria-label={`Filter column ${colName(c)}`} className={`sheet-filter-btn${filterHeads.active.has(c) ? ' on' : ''}`} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onFilterMenu?.(c, { x: e.clientX, y: e.clientY }); }}>▾</span>}{listCell === k && <span role="button" aria-label="Choose from the list" className="sheet-filter-btn on" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onListMenu?.(r, c, { x: e.clientX, y: e.clientY }); }}>▾</span>}</div>
+        onPointerDown={(e) => { if (cell?.link && (e.ctrlKey || e.metaKey) && onLink) { e.preventDefault(); onLink(cell.link); return; } down(e, 'cells', spilled.size ? cellAt(e) : { r, c }); }} title={cell?.link ? `${cell.link} (Ctrl+click to open)` : undefined} onContextMenu={(e) => { const p = cellAt(e); context(e, 'cell', p.r, p.c); }}>{va ? <span style={{ overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis' }}>{text}</span> : text}{filterHeads && r === filterHeads.r && c >= filterHeads.c1 && c <= filterHeads.c2 && <span role="button" aria-label={`Filter column ${colName(c)}`} className={`sheet-filter-btn${filterHeads.active.has(c) ? ' on' : ''}`} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onFilterMenu?.(c, { x: e.clientX, y: e.clientY }); }}>▾</span>}{listCell === k && <span role="button" aria-label="Choose from the list" className="sheet-filter-btn on" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onListMenu?.(r, c, { x: e.clientX, y: e.clientY }); }}>▾</span>}</div>
     );
   };
   /** the cells of a block of rows and columns, drawn in one layer */
@@ -273,6 +273,11 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
   return (
     <div ref={box} tabIndex={0} role="grid" aria-label="Spreadsheet" aria-rowcount={rows} aria-colcount={cols} className="sheet-wrap"
       onPointerMove={move} onPointerUp={up}
+      // on the grid, not on each cell: the pointer is captured by the grid while a button is down, so a double click is delivered to it and never to the cell under the pointer
+      onDoubleClick={(e) => {
+        if (editing || (e.target as HTMLElement).closest('.sheet-head, .sheet-filter-btn, .sheet-chart, .sheet-corner, .sheet-edit')) return;
+        const p = cellAt(e); setEditing({ pos: p, text: editText(sheet.cells[key(p.r, p.c)]), typed: false });
+      }}
       onKeyDown={(e) => { if (editing) return; if (onKey(e)) e.preventDefault(); }}
 >
       <div ref={scroller} className="sheet-scroll" onScroll={(e) => { const t = e.currentTarget; setScroll((s0) => ({ ...s0, x: t.scrollLeft, y: t.scrollTop })); }}>

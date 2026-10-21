@@ -17,6 +17,8 @@ export interface Sheet {
   name: string; cells: Record<string, Cell>;
   /** column widths and row heights in px, only where they differ from the default */
   colW: Record<number, number>; rowH: Record<number, number>; merges: Range[];
+  /** the size of a column / row that has none of its own (px); a file's own default, so its widths and heights stay as they were */
+  defColW?: number; defRowH?: number;
   /** frozen rows and columns: they stay in view while the rest scrolls (xlsx only) */
   freeze?: { rows: number; cols: number };
   charts?: Chart[];
@@ -36,7 +38,10 @@ export type ChartType = 'column' | 'bar' | 'line' | 'area' | 'scatter' | 'pie';
 export interface Chart { id: string; type: ChartType; title: string; range: Range; header: boolean; labels: boolean; x: number; y: number; w: number; h: number }
 export interface Workbook { sheets: Sheet[]; active: number; /** csv only */ delimiter?: string }
 
-export const DEFAULT_COL_W = 96, DEFAULT_ROW_H = 24, MIN_ROWS = 100, MIN_COLS = 26;
+/** a new sheet's cell size (Google Sheets': 100 x 21 px); a file brings its own in `defColW` / `defRowH` */
+export const DEFAULT_COL_W = 100, DEFAULT_ROW_H = 21, MIN_ROWS = 100, MIN_COLS = 26;
+export const colWidth = (s: Pick<Sheet, 'colW' | 'defColW'>, c: number): number => s.colW[c] ?? s.defColW ?? DEFAULT_COL_W;
+export const rowHeight = (s: Pick<Sheet, 'rowH' | 'defRowH'>, r: number): number => s.rowH[r] ?? s.defRowH ?? DEFAULT_ROW_H;
 
 /** a cell's text as it is edited: a formula as "=…", anything else as it would be typed */
 export const cellText = (cell: Cell | undefined): string => (cell?.f !== undefined ? `=${cell.f}` : cell?.v === null || cell?.v === undefined ? '' : typeof cell.v === 'boolean' ? (cell.v ? 'TRUE' : 'FALSE') : String(cell.v));
@@ -82,11 +87,11 @@ export const isNumeric = (v: CellValue): boolean => typeof v === 'number' || (ty
 export const numberOf = (v: CellValue): number | null => (typeof v === 'number' ? v : isNumeric(v) ? Number((v as string).trim()) : null);
 
 /** where a column starts and a row starts on the sheet, in px */
-export const colLeft = (s: Sheet, c: number): number => { let x = 0; for (let i = 0; i < c; i++) x += s.colW[i] ?? DEFAULT_COL_W; return x; };
-export const rowTop = (s: Sheet, r: number): number => { let y = 0; for (let i = 0; i < r; i++) y += s.rowH[i] ?? DEFAULT_ROW_H; return y; };
+export const colLeft = (s: Sheet, c: number): number => { let x = 0; for (let i = 0; i < c; i++) x += colWidth(s, i); return x; };
+export const rowTop = (s: Sheet, r: number): number => { let y = 0; for (let i = 0; i < r; i++) y += rowHeight(s, i); return y; };
 /** the column and row at a px position, with how far into it (the inverse of `colLeft` and `rowTop`) */
 export function cellAtPx(s: Sheet, x: number, y: number): { r: number; c: number; dx: number; dy: number } {
-  let c = 0, left = 0, w = s.colW[0] ?? DEFAULT_COL_W; while (left + w <= x && c < 16383) { left += w; c++; w = s.colW[c] ?? DEFAULT_COL_W; }
-  let r = 0, top = 0, h = s.rowH[0] ?? DEFAULT_ROW_H; while (top + h <= y && r < 1048575) { top += h; r++; h = s.rowH[r] ?? DEFAULT_ROW_H; }
+  let c = 0, left = 0, w = colWidth(s, 0); while (left + w <= x && c < 16383) { left += w; c++; w = colWidth(s, c); }
+  let r = 0, top = 0, h = rowHeight(s, 0); while (top + h <= y && r < 1048575) { top += h; r++; h = rowHeight(s, r); }
   return { r, c, dx: Math.max(0, x - left), dy: Math.max(0, y - top) };
 }

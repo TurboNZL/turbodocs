@@ -20,3 +20,6 @@ The installed app checks GitHub for a new version when it starts and every few h
 
 ## Pick your apps
 See [App modules and file types](APP_MODULES.md).
+
+## The window
+Settings › Appearance › **Layout** moves Home and Settings: a side bar, a narrow bar of icons, or a bar along the top. A document normally hides that bar so it gets the whole window (the arrow at the left of its header goes back to Home); untick the box there to keep the bar. In the editors the menus and the document's name share one row, and the tools sit in one row below it: tools that do not fit the window's width are behind the **⋯** button at its end.

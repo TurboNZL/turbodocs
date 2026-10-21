@@ -8,6 +8,7 @@ import { addOpened, editUrl } from '../lib/opened.ts';
 import { confirmLeave } from '../lib/dirty.ts';
 import { goHome, goNew, openFileDialog } from '../lib/actions.ts';
 import { docPrefs, lastFile } from '../lib/docPrefs.ts';
+import { usePref } from '../lib/pref.ts';
 
 const NAV = [{ to: '/', label: 'Home', icon: Home, end: true }, { to: '/settings', label: 'Settings', icon: Settings, end: false }];
 
@@ -41,18 +42,27 @@ export function Layout() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [navigate]);
+  const [layout] = usePref('ui.layout', 'side');
+  const [focus] = usePref('ui.focusEditing', 'on');
+  const hideNav = focus === 'on' && pathname.startsWith('/edit'); // a document gets the whole window; its header has the way back
+  const link = (n: (typeof NAV)[number], showLabel: boolean) => (
+    <NavLink key={n.to} to={n.to} end={n.end} title={n.label} aria-label={n.label} onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }} className={({ isActive }) => cn('bt-nav flex items-center gap-2 px-3 py-2 text-sm', isActive && 'font-medium')}>
+      {({ isActive }) => <span className="flex items-center gap-2" aria-current={isActive ? 'page' : undefined}><n.icon size={16} />{showLabel && n.label}</span>}
+    </NavLink>
+  );
   return (
     <div className="flex h-full flex-col bg-bg text-fg">
       <WindowFrame />
+      {!hideNav && layout === 'top' && (
+        <nav aria-label="Main" className="bt-top flex items-center gap-1 px-3 py-1.5"><span className="mr-3 text-base font-bold">TurboDocs</span>{NAV.map((n) => link(n, true))}</nav>
+      )}
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Main" className="bt-side flex w-52 shrink-0 flex-col gap-1 p-3">
-          <div className="px-2 pb-3 pt-1 text-lg font-bold">TurboDocs</div>
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }} className={({ isActive }) => cn('bt-nav flex items-center gap-2 px-3 py-2 text-sm', isActive && 'font-medium')} aria-current={undefined}>
-              {({ isActive }) => <span className="flex items-center gap-2" aria-current={isActive ? 'page' : undefined}><n.icon size={16} />{n.label}</span>}
-            </NavLink>
-          ))}
-        </nav>
+        {!hideNav && layout !== 'top' && (
+          <nav aria-label="Main" className={cn('bt-side flex shrink-0 flex-col gap-1 p-3', layout === 'rail' ? 'w-16 items-center !px-2' : 'w-52')}>
+            {layout === 'rail' ? <div className="pb-3 pt-1 text-lg font-bold" title="TurboDocs">T</div> : <div className="px-2 pb-3 pt-1 text-lg font-bold">TurboDocs</div>}
+            {NAV.map((n) => link(n, layout !== 'rail'))}
+          </nav>
+        )}
         <main key={pathname} className="bt-page tk-swap min-w-0 flex-1 overflow-y-auto"><Outlet /></main>
       </div>
     </div>
