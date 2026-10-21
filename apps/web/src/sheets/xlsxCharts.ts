@@ -22,18 +22,24 @@ function chartXml(sh: Sheet, ch: Chart): string {
   const sers = series.map((s, i) => {
     const col = sc + i, color = PALETTE[i % PALETTE.length].slice(1).toUpperCase();
     const tx = ch.header ? `<c:tx><c:strRef><c:f>${esc(name)}!${abs(col, r1, r1)}</c:f>${strCache([s.name])}</c:strRef></c:tx>` : `<c:tx><c:v>${esc(s.name)}</c:v></c:tx>`;
-    const fill = ch.type === 'line' ? `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr></c:marker>` : ch.type === 'pie' ? '' : `<c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr><c:invertIfNegative val="0"/>`;
+    const fill = ch.type === 'scatter' ? `<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="7"/><c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr></c:marker>` : ch.type === 'line' ? `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr></c:marker>` : ch.type === 'pie' ? '' : ch.type === 'area' ? `<c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr>` : `<c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr><c:invertIfNegative val="0"/>`;
     const dpts = ch.type === 'pie' ? data.cats.map((_, k) => `<c:dPt><c:idx val="${k}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="${PALETTE[k % PALETTE.length].slice(1).toUpperCase()}"/></a:solidFill></c:spPr></c:dPt>`).join('') : '';
-    const cat = labels ? `<c:cat><c:strRef><c:f>${esc(name)}!${abs(c1, first, r2)}</c:f>${strCache(data.cats)}</c:strRef></c:cat>` : '';
-    const val = `<c:val><c:numRef><c:f>${esc(name)}!${abs(col, first, r2)}</c:f>${numCache(s.values)}</c:numRef></c:val>`;
-    return `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx}${fill}${dpts}${cat}${val}${ch.type === 'line' ? '<c:smooth val="0"/>' : ''}</c:ser>`;
+    const cat = ch.type === 'scatter' ? (labels ? `<c:xVal><c:numRef><c:f>${esc(name)}!${abs(c1, first, r2)}</c:f>${numCache(data.cats.map((x) => (x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : null)))}</c:numRef></c:xVal>` : '')
+      : labels ? `<c:cat><c:strRef><c:f>${esc(name)}!${abs(c1, first, r2)}</c:f>${strCache(data.cats)}</c:strRef></c:cat>` : '';
+    const vt = ch.type === 'scatter' ? 'yVal' : 'val';
+    const val = `<c:${vt}><c:numRef><c:f>${esc(name)}!${abs(col, first, r2)}</c:f>${numCache(s.values)}</c:numRef></c:${vt}>`;
+    return `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx}${fill}${dpts}${cat}${val}${ch.type === 'line' || ch.type === 'scatter' ? '<c:smooth val="0"/>' : ''}</c:ser>`;
   }).join('');
   const horizontal = ch.type === 'bar';
   const ax = '<c:axId val="111111"/><c:axId val="222222"/>';
   const plot = ch.type === 'pie' ? `<c:pieChart><c:varyColors val="1"/>${sers}<c:firstSliceAng val="0"/></c:pieChart>`
+    : ch.type === 'scatter' ? `<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>${sers}${ax}</c:scatterChart>`
+    : ch.type === 'area' ? `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${ax}</c:areaChart>`
     : ch.type === 'line' ? `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}<c:marker val="1"/>${ax}</c:lineChart>`
       : `<c:barChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="clustered"/><c:varyColors val="0"/>${sers}<c:gapWidth val="150"/>${ax}</c:barChart>`;
-  const axes = ch.type === 'pie' ? '' : `<c:catAx><c:axId val="111111"/><c:scaling><c:orientation val="${horizontal ? 'maxMin' : 'minMax'}"/></c:scaling><c:delete val="0"/><c:axPos val="${horizontal ? 'l' : 'b'}"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="222222"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="222222"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="${horizontal ? 'b' : 'l'}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="111111"/><c:crosses val="${horizontal ? 'max' : 'autoZero'}"/><c:crossBetween val="between"/></c:valAx>`;
+  const xAxis = ch.type === 'scatter'
+    ? '<c:valAx><c:axId val="111111"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="222222"/><c:crosses val="autoZero"/><c:crossBetween val="midCat"/></c:valAx>' : '';
+  const axes = ch.type === 'pie' ? '' : ch.type === 'scatter' ? `${xAxis}<c:valAx><c:axId val="222222"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="111111"/><c:crosses val="autoZero"/><c:crossBetween val="midCat"/></c:valAx>` : `<c:catAx><c:axId val="111111"/><c:scaling><c:orientation val="${horizontal ? 'maxMin' : 'minMax'}"/></c:scaling><c:delete val="0"/><c:axPos val="${horizontal ? 'l' : 'b'}"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="222222"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="222222"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="${horizontal ? 'b' : 'l'}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="111111"/><c:crosses val="${horizontal ? 'max' : 'autoZero'}"/><c:crossBetween val="between"/></c:valAx>`;
   const title = ch.title ? `<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:r><a:t>${esc(clean(ch.title))}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>` : '<c:autoTitleDeleted val="1"/>';
   const legend = ch.type === 'pie' || series.length > 1 ? '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="${NS_C}" xmlns:a="${NS_A}" xmlns:r="${NS_R}"><c:roundedCorners val="0"/><c:chart>${title}<c:plotArea><c:layout/>${plot}${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>`;
@@ -47,7 +53,7 @@ function drawingXml(sh: Sheet, charts: Chart[]): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="${NS_XDR}" xmlns:a="${NS_A}">${anchors}</xdr:wsDr>`;
 }
 
-export interface ChartParts { files: Record<string, string>; overrides: string[]; /** sheet index -> its relationships file's content */ drawingOf: Map<number, string> }
+export interface ChartParts { files: Record<string, string>; overrides: string[]; /** sheet index -> the drawing part's path as its worksheet relationship names it */ drawingOf: Map<number, string> }
 export function buildChartParts(sheets: Sheet[]): ChartParts {
   const out: ChartParts = { files: {}, overrides: [], drawingOf: new Map() };
   let drawing = 0, chart = 0;
@@ -65,8 +71,7 @@ export function buildChartParts(sheets: Sheet[]): ChartParts {
     out.files[`xl/drawings/drawing${drawing}.xml`] = drawingXml(sh, sh.charts);
     out.files[`xl/drawings/_rels/drawing${drawing}.xml.rels`] = rels(links.join(''));
     out.overrides.push(`<Override PartName="/xl/drawings/drawing${drawing}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
-    out.files[`xl/worksheets/_rels/sheet${i + 1}.xml.rels`] = rels(`<Relationship Id="rId1" Type="${NS_R}/drawing" Target="../drawings/drawing${drawing}.xml"/>`);
-    out.drawingOf.set(i, 'rId1');
+    out.drawingOf.set(i, `../drawings/drawing${drawing}.xml`);
   });
   return out;
 }
@@ -133,12 +138,13 @@ function readChart(root: El, sheet: Sheet, warnings: Set<string>): Omit<Chart, '
   let type: ChartType;
   if (kind === 'barChart') type = kids(group, 'barDir')[0]?.getAttribute('val') === 'bar' ? 'bar' : 'column';
   else if (kind === 'lineChart') type = 'line';
-  else if (kind === 'areaChart' || kind === 'scatterChart') { type = 'line'; warnings.add('Area and scatter charts are shown as line charts.'); }
+  else if (kind === 'areaChart') type = 'area';
+  else if (kind === 'scatterChart') type = 'scatter';
   else if (kind === 'pieChart' || kind === 'doughnutChart') type = 'pie';
   else { warnings.add(`A ${kind.replace(/Chart$/, '')} chart is not shown (only column, bar, line and pie charts are).`); return null; }
   const sers = kids(group, 'ser');
   const refOf = (s: El, tag: string) => { const e = kids(s, tag)[0]; return e ? parseRef(desc(e, 'f')[0]?.textContent) : null; };
-  const refs = sers.map((s) => ({ tx: refOf(s, 'tx'), cat: refOf(s, 'cat'), val: refOf(s, kind === 'scatterChart' ? 'yVal' : 'val') }));
+  const refs = sers.map((s) => ({ tx: refOf(s, 'tx'), cat: refOf(s, kind === 'scatterChart' ? 'xVal' : 'cat'), val: refOf(s, kind === 'scatterChart' ? 'yVal' : 'val') }));
   const vals = refs.map((r) => r.val);
   if (!vals.length || vals.some((v) => !v)) { warnings.add('A chart whose data is not in the sheet is not shown.'); return null; }
   const v = vals as Ref[];

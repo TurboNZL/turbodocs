@@ -1,13 +1,16 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 /** A window over the page, in the themes' dialog look (`.bt-window .bt-titlebar .bt-body .bt-footer`); pops in (motion module). Esc or a click outside closes it. */
 export function Dialog({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+  // One listener for the dialog's whole life, calling the latest onClose: a listener that is swapped on every render can be swapped in the middle of a key press
+  // (another handler's state change re-renders first) and then never sees that key.
+  const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close.current(); } };
     window.addEventListener('keydown', esc, true);
     return () => window.removeEventListener('keydown', esc, true);
-  }, [onClose]);
+  }, []);
   return createPortal(
     <div className="bt-backdrop tk-fade fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-label={title} className={`bt-window tk-pop flex max-h-[85vh] w-full flex-col overflow-hidden ${wide ? 'max-w-2xl' : 'max-w-md'}`}>

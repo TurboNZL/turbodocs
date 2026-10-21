@@ -10,14 +10,21 @@ export type Geometry = 'rect' | 'ellipse' | 'roundRect' | 'triangle' | 'diamond'
 /** `role` says what a text box is for on a layout (the title, the body ...), so changing the layout can move the right text into the right place; `ph` is the hint shown in an empty box while editing (never drawn in the show or saved) */
 export type Role = 'title' | 'subtitle' | 'body' | 'body2' | 'head1' | 'head2';
 export interface TextEl extends Frame { id: string; kind: 'text'; paras: Para[]; geometry?: Geometry; fill?: string; line?: string; lineW?: number; valign?: 'top' | 'middle' | 'bottom'; rot?: number; role?: Role; ph?: string }
-export interface ImageEl extends Frame { id: string; kind: 'image'; src: string; alt?: string; rot?: number }
+/** the part of a picture cut off each side, as fractions of its size */
+export interface Crop { l: number; t: number; r: number; b: number }
+export interface ImageEl extends Frame { id: string; kind: 'image'; src: string; alt?: string; rot?: number; crop?: Crop }
 /** a straight line from the top-left corner of its frame to the bottom-right one (`flipV` makes it bottom-left to top-right) */
 export interface LineEl extends Frame { id: string; kind: 'line'; color: string; width: number; dash?: boolean; flipV?: boolean; head?: boolean; tail?: boolean; rot?: number }
 export interface TCell { t: string; b?: boolean; i?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; size?: number }
 /** a table: column widths and row heights in px (they always add up to the frame), the first row can be a header */
-export interface TableEl extends Frame { id: string; kind: 'table'; cols: number[]; rows: number[]; cells: TCell[][]; header: boolean; banded: boolean; accent: string; border: string; rot?: number }
-export type El = TextEl | ImageEl | LineEl | TableEl;
-export interface Slide { id: string; bg?: string; els: El[]; notes: string }
+export interface TMerge { r: number; c: number; rs: number; cs: number }
+export interface TableEl extends Frame { id: string; kind: 'table'; cols: number[]; rows: number[]; cells: TCell[][]; header: boolean; banded: boolean; accent: string; border: string; rot?: number; /** merged cells: the one at (r, c) spans `rs` rows and `cs` columns, those it covers are hidden */ merges?: TMerge[] }
+export type SlideChartType = 'column' | 'bar' | 'line' | 'area' | 'pie';
+/** a chart on a slide, with its own little table of numbers (the first series names, the categories down the side) */
+export interface ChartEl extends Frame { id: string; kind: 'chart'; type: SlideChartType; title: string; cats: string[]; series: { name: string; values: (number | null)[] }[]; rot?: number }
+export type El = TextEl | ImageEl | LineEl | TableEl | ChartEl;
+export type Transition = 'fade' | 'push' | 'wipe' | 'zoom';
+export interface Slide { id: string; bg?: string; els: El[]; notes: string; /** how the show comes to this slide */ trans?: Transition }
 export interface Deck { w: number; h: number; /** the default text font */ font: string; slides: Slide[] }
 
 let counter = 0;

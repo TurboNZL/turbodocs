@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { bounds, defaultTextColor, type Deck, type El, type Frame, type LineEl, type Para, type Slide, type TableEl, type TextEl } from './model.ts';
+import { bounds, defaultTextColor, type ChartEl, type Deck, type El, type Frame, type ImageEl, type LineEl, type Para, type Slide, type TableEl, type TextEl } from './model.ts';
 import { RichText, fillEditable, readParas } from './rich.tsx';
 import { isSvgShape, shapePath } from './shapes.ts';
-import { cellTint } from './tableOps.ts';
+import { cellTint, isCovered, mergeOf } from './tableOps.ts';
+import { ChartView } from '../sheets/ChartView.tsx';
 import { fontStack } from '../editor/fonts.ts';
 
 const INSET = { x: 9.6, y: 4.8 };
@@ -33,6 +34,19 @@ function ShapeSvg({ el }: { el: TextEl }) {
   return <svg width={el.w} height={el.h} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden><path d={shapePath(el.geometry!, el.w, el.h)} fill={el.fill ?? 'none'} stroke={el.line ?? 'none'} strokeWidth={el.line ? Math.max(1, el.lineW ?? 1) : 0} strokeLinejoin="round" /></svg>;
 }
 
+/** a picture, cut down to its crop */
+export function Pic({ el }: { el: ImageEl }) {
+  const c = el.crop;
+  if (!c || (!c.l && !c.t && !c.r && !c.b)) return <img src={el.src} alt={el.alt ?? ''} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />;
+  const kw = Math.max(0.05, 1 - c.l - c.r), kh = Math.max(0.05, 1 - c.t - c.b);
+  return <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}><img src={el.src} alt={el.alt ?? ''} draggable={false} style={{ position: 'absolute', maxWidth: 'none', width: el.w / kw, height: el.h / kh, left: (-c.l * el.w) / kw, top: (-c.t * el.h) / kh, pointerEvents: 'none' }} /></div>;
+}
+/** a chart on a slide, in the slide's own text colour */
+export function SlideChart({ el, dark }: { el: ChartEl; dark: boolean }) {
+  const fg = dark ? '#ffffff' : '#000000';
+  return <ChartView chart={el} data={{ cats: el.cats, series: el.series }} w={el.w} h={el.h} ink={{ fg, muted: dark ? '#ffffffb3' : '#000000a6', line: dark ? '#ffffff33' : '#00000022', bg: 'none' }} />;
+}
+
 export function LineView({ el }: { el: LineEl }) {
   const y1 = el.flipV ? el.h : 0, y2 = el.flipV ? 0 : el.h;
   const mid = `m${el.id}`;
@@ -56,12 +70,14 @@ export function TableView({ el, dark, active, editing, onCell, onEditCell, onCom
         {el.cells.map((row, r) => (
           <tr key={r} style={{ height: el.rows[r] }}>
             {row.map((cell, c) => {
+              if (isCovered(el, r, c)) return null;
+              const mg = mergeOf(el, r, c);
               const head = el.header && r === 0;
               const fill = cell.fill ?? cellTint(el, r, dark);
               const color = cell.color ?? (head ? defaultTextColor(fill) : undefined);
               const isEdit = editing?.r === r && editing.c === c;
               return (
-                <td key={c} data-active={active?.r === r && active.c === c ? '1' : undefined} data-cell={`${r},${c}`}
+                <td key={c} colSpan={mg?.cs} rowSpan={mg?.rs} data-active={active?.r === r && active.c === c ? '1' : undefined} data-cell={`${r},${c}`}
                   style={{ border: `1px solid ${el.border}`, background: fill, color, fontWeight: cell.b || head ? 700 : 400, fontStyle: cell.i ? 'italic' : 'normal', textAlign: cell.align ?? 'left', fontSize: ((cell.size ?? 18) * 96) / 72, padding: '4px 10px', lineHeight: 1.2 }}
                   onPointerDown={onCell ? () => onCell(r, c) : undefined} onDoubleClick={onEditCell ? () => onEditCell(r, c) : undefined}>
                   {isEdit && onCommitCell
@@ -104,7 +120,8 @@ function TextBody({ el, deck, hint }: { el: TextEl; deck: Deck; hint?: boolean }
 }
 
 export function ElementView({ el, deck, dark, hints = false }: { el: El; deck: Deck; dark: boolean; hints?: boolean }) {
-  if (el.kind === 'image') return <img src={el.src} alt={el.alt ?? ''} draggable={false} style={{ ...framed(el), objectFit: 'fill' }} />;
+  if (el.kind === 'image') return <div style={framed(el)}><Pic el={el} /></div>;
+  if (el.kind === 'chart') return <div style={framed(el)}><SlideChart el={el} dark={dark} /></div>;
   if (el.kind === 'line') return <div style={framed(el)}><LineView el={el} /></div>;
   if (el.kind === 'table') return <div style={framed(el)}><TableView el={el} dark={dark} /></div>;
   return <div style={framed(el)}><TextBody el={el} deck={deck} hint={hints} /></div>;
@@ -129,8 +146,8 @@ const SNAP = 6;
  * boxes, the eight handles resize, the round handle turns, double-click on a text box edits its text in place (rich text: the toolbar and the usual shortcuts work on the
  * selection) and on a table cell edits the cell. Positions are slide px; the pointer is divided by `scale`, so any zoom is exact.
  */
-export function SlideCanvas({ slide, deck, scale, selected, editing, cell, editCell, onSelect, onEdit, onPatch, onText, onCell, onEditCell, onCommitCell, editRef }: {
-  slide: Slide; deck: Deck; scale: number; selected: string[]; editing: string | null; cell: CellRef | null; editCell: CellRef | null;
+export function SlideCanvas({ onContext, onEditChart, slide, deck, scale, selected, editing, cell, editCell, onSelect, onEdit, onPatch, onText, onCell, onEditCell, onCommitCell, editRef }: {
+  onContext?(c: { x: number; y: number; id: string | null; cell: CellRef | null }): void; onEditChart?(id: string): void; slide: Slide; deck: Deck; scale: number; selected: string[]; editing: string | null; cell: CellRef | null; editCell: CellRef | null;
   onSelect(ids: string[]): void; onEdit(id: string | null): void; onPatch(p: Patch, first: boolean): void; onText(id: string, paras: Para[]): void;
   onCell(c: CellRef | null): void; onEditCell(c: CellRef | null): void; onCommitCell(c: CellRef, text: string, next?: 'right' | 'cancel'): void; editRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -229,13 +246,19 @@ export function SlideCanvas({ slide, deck, scale, selected, editing, cell, editC
   const single = selected.length === 1 ? byId(selected[0]) : undefined;
   return (
     <SlideStage slide={slide} deck={deck} scale={scale}>
-      <div ref={paper} style={{ position: 'absolute', inset: 0 }} onPointerDown={background}>
+      <div ref={paper} style={{ position: 'absolute', inset: 0 }} onPointerDown={background} onContextMenu={(e) => {
+        e.preventDefault();
+        const box = (e.target as HTMLElement).closest('[data-el]') as HTMLElement | null, td = (e.target as HTMLElement).closest('td[data-cell]') as HTMLElement | null;
+        const [r, c] = td ? td.dataset.cell!.split(',').map(Number) : [0, 0];
+        onContext?.({ x: e.clientX, y: e.clientY, id: box?.dataset.el ?? null, cell: box && td ? { id: box.dataset.el!, r, c } : null });
+      }}>
         {slide.els.map((el) => {
           const isSel = selected.includes(el.id), isEdit = editing === el.id;
           return (
             <div key={el.id} data-el={el.id} style={{ ...framed(el), cursor: isEdit ? 'text' : 'move' }} className={isSel && el.kind !== 'line' ? 'slide-sel' : ''} onPointerDown={(e) => drag(e, el, 'move')}
-              onDoubleClick={() => { if (el.kind === 'text') { onSelect([el.id]); onEdit(el.id); } }}>
-              {el.kind === 'image' && <img src={el.src} alt={el.alt ?? ''} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }} />}
+              onDoubleClick={() => { if (el.kind === 'text') { onSelect([el.id]); onEdit(el.id); } else if (el.kind === 'chart') onEditChart?.(el.id); }}>
+              {el.kind === 'image' && <Pic el={el} />}
+              {el.kind === 'chart' && <div style={{ pointerEvents: 'none' }}><SlideChart el={el} dark={text === '#ffffff'} /></div>}
               {el.kind === 'line' && <LineView el={el} />}
               {el.kind === 'table' && (
                 <TableView el={el} dark={text === '#ffffff'} active={cell?.id === el.id ? cell : null} editing={editCell?.id === el.id ? editCell : null}

@@ -41,6 +41,14 @@
 | Ctrl+A | Select the data |
 | Ctrl+B / I / U | Bold, italic, underline |
 | Ctrl+F / Ctrl+H | Find and replace (Enter: next match) |
+| Ctrl+K | Link on the selected cells |
+| Alt+Shift+5 | Strikethrough |
+| Ctrl+\ | Clear formatting |
+| Ctrl+Shift+V / Ctrl+Alt+V | Paste values only / formatting only |
+| Ctrl+Shift+4 / 5 / 1 | Currency / percent / number format |
+| Ctrl+; | Today's date |
+| Shift+F11 | New sheet |
+| Ctrl+click (a linked cell) | Open the link |
 | Right-click | Cut, copy, paste, insert, delete, sort, freeze |
 | Delete (chart selected) | Remove the chart |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
@@ -48,7 +56,12 @@
 ## Slides
 | | |
 |---|---|
-| F5 / Shift+F5 | Present from the start / from this slide |
+| Ctrl+F5 / Ctrl+Shift+F5 | Slideshow from this slide / from the beginning (F5 / Shift+F5 also work) |
+| Ctrl+M | New slide |
+| Ctrl+B / I / U | Bold, italic, underline (a selected text box) |
+| Ctrl+Shift+L / E / R / J | Align left / center / right / justified |
+| Ctrl+Shift+8 / 7 | Bulleted / numbered list |
+| Ctrl+↑ / ↓ (Shift: to the front / back) | Bring forward / send backward; with no object selected, move the slide up / down (Shift: to the start / end) |
 | Enter | Edit the selected text box |
 | Delete | Delete the selected objects |
 | Arrows (Shift: ×10) | Nudge the selected objects |

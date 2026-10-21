@@ -6,10 +6,12 @@
 export interface Edge { st: 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double'; c: string }
 export interface Borders { t?: Edge; b?: Edge; l?: Edge; r?: Edge }
 export interface CellFmt {
-  b?: boolean; i?: boolean; u?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; /** vertical alignment (bottom is the spreadsheet default) */ va?: 'top' | 'middle' | 'bottom'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean; bd?: Borders;
+  b?: boolean; i?: boolean; u?: boolean; /** strikethrough */ st?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; /** vertical alignment (bottom is the spreadsheet default) */ va?: 'top' | 'middle' | 'bottom'; font?: string; size?: number; /** number format code, as in the file ("0.00", "0%", "yyyy-mm-dd") */ nf?: string; wrap?: boolean; bd?: Borders;
 }
 export type CellValue = string | number | boolean | null;
-export interface Cell { v: CellValue; f?: string; /** an error value such as #DIV/0! (kept as text in `v`) */ err?: boolean; s?: CellFmt }
+export interface Cell { v: CellValue; f?: string; /** an error value such as #DIV/0! (kept as text in `v`) */ err?: boolean; s?: CellFmt; /** a hyperlink (http, https or mailto) */ link?: string }
+/** nothing in it worth keeping */
+export const isEmptyCell = (c: Cell): boolean => c.v === null && !c.s && c.f === undefined && !c.link;
 export interface Range { r1: number; c1: number; r2: number; c2: number }
 export interface Sheet {
   name: string; cells: Record<string, Cell>;
@@ -18,8 +20,15 @@ export interface Sheet {
   /** frozen rows and columns: they stay in view while the rest scrolls (xlsx only) */
   freeze?: { rows: number; cols: number };
   charts?: Chart[];
+  cf?: CfRule[]; dv?: Validation[]; filter?: Filter;
 }
-export type ChartType = 'column' | 'bar' | 'line' | 'pie';
+/** Conditional formatting: a rule colours the cells of its range that match (`scale` shades numbers from `lo` to `hi`). */
+export interface CfRule { id: string; range: Range; kind: 'gt' | 'ge' | 'lt' | 'le' | 'eq' | 'ne' | 'between' | 'text' | 'blank' | 'notblank' | 'scale'; v1?: string; v2?: string; fill?: string; color?: string; bold?: boolean; lo?: string; hi?: string }
+/** Data validation: what may be typed into the cells of a range (a list, whole numbers or decimals; `source` is a range of cells holding the list). */
+export interface Validation { range: Range; kind: 'list' | 'whole' | 'decimal'; items?: string[]; source?: string; min?: number; max?: number; blank: boolean; message?: string }
+/** A filter on a block of cells: the first row holds the headings, `show` lists the texts a column may have (a column not in it shows everything). */
+export interface Filter { range: Range; show: Record<number, string[]> }
+export type ChartType = 'column' | 'bar' | 'line' | 'area' | 'scatter' | 'pie';
 /**
  * A chart floating over a sheet. Its data is a block of cells (`range`): with `header` the first row names the series, with `labels` the first column names the
  * categories, every other column is a series. `x y w h` are px on the sheet (like the grid itself, not the window).

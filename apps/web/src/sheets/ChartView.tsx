@@ -1,11 +1,14 @@
 import { niceAxis, PALETTE, shortNumber, type ChartData } from './charts.ts';
 import type { Chart } from './model.ts';
 
-const FG = 'hsl(var(--fg))', MUTED = 'hsl(var(--muted))', LINE = 'hsl(var(--line))';
+const D_FG = 'hsl(var(--fg))', D_MUTED = 'hsl(var(--muted))', D_LINE = 'hsl(var(--line))';
+/** colours of the chart's text and lines (the page's by default; a slide passes its own) */
+export interface Ink { fg: string; muted: string; line: string; bg: string }
 const trim = (t: string, n: number) => (t.length > n ? `${t.slice(0, Math.max(1, n - 1))}…` : t);
 
 /** A chart drawn as SVG (column, bar, line or pie) from its data; colours come from one fixed palette, text and grid from the theme's tokens. */
-export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | 'title'>; data: ChartData; w: number; h: number }) {
+export function ChartView({ chart, data, w, h, ink }: { chart: { type: Chart['type']; title: string }; data: ChartData; w: number; h: number; ink?: Ink }) {
+  const FG = ink?.fg ?? D_FG, MUTED = ink?.muted ?? D_MUTED, LINE = ink?.line ?? D_LINE, BG = ink?.bg ?? 'hsl(var(--bg))';
   const { type } = chart;
   const pie = type === 'pie';
   const legend = pie ? data.cats.map((c, i) => ({ name: c, color: PALETTE[i % PALETTE.length] })) : data.series.map((s, i) => ({ name: s.name, color: PALETTE[i % PALETTE.length] }));
@@ -17,20 +20,25 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
   const left = horizontal ? Math.min(150, 14 + Math.max(0, ...data.cats.map((c) => c.length)) * 6.5) : 14 + Math.max(...axis.ticks.map((t) => shortNumber(t).length), 1) * 7;
   const plot = { x: left, y: top, w: Math.max(20, w - left - 14), h: Math.max(20, h - top - bottom - (horizontal ? 18 : 22)) };
   const n = data.cats.length || 1;
+  const scatter = type === 'scatter';
+  const xs = data.cats.map((c, i) => { const v = Number(c); return c.trim() !== '' && Number.isFinite(v) ? v : i + 1; });
+  const xAxis = niceAxis(Math.min(...xs, 0 + (xs.length ? Math.min(...xs) : 0)), Math.max(...xs, 1));
+  const xPos = (v: number) => plot.x + ((v - xAxis.lo) / (xAxis.hi - xAxis.lo)) * plot.w;
   const scaleV = (v: number) => (horizontal ? plot.x + ((v - axis.lo) / (axis.hi - axis.lo)) * plot.w : plot.y + plot.h - ((v - axis.lo) / (axis.hi - axis.lo)) * plot.h);
   const empty = data.series.length === 0 || (pie ? false : all.length === 0);
   return (
     <svg width={w} height={h} role="img" aria-label={chart.title || `${type} chart`} style={{ display: 'block', fontSize: 12, fontFamily: 'inherit' }}>
-      <rect width={w} height={h} fill="hsl(var(--bg))" />
+      {BG !== 'none' && <rect width={w} height={h} fill={BG} />}
       {chart.title && <text x={w / 2} y={24} textAnchor="middle" fontSize={15} fontWeight={600} fill={FG}>{trim(chart.title, Math.floor(w / 8))}</text>}
       {empty && <text x={w / 2} y={h / 2} textAnchor="middle" fill={MUTED}>No numbers in the data range</text>}
-      {!empty && pie && <Pie data={data} cx={w / 2} cy={top + (h - top - bottom) / 2} r={Math.max(10, Math.min(w - 40, h - top - bottom - 10) / 2)} />}
+      {!empty && pie && <Pie data={data} muted={MUTED} bg={BG === 'none' ? 'transparent' : BG} cx={w / 2} cy={top + (h - top - bottom) / 2} r={Math.max(10, Math.min(w - 40, h - top - bottom - 10) / 2)} />}
       {!empty && !pie && (
         <g>
           {axis.ticks.map((t) => (horizontal
             ? <g key={t}><line x1={scaleV(t)} x2={scaleV(t)} y1={plot.y} y2={plot.y + plot.h} stroke={LINE} /><text x={scaleV(t)} y={plot.y + plot.h + 15} textAnchor="middle" fill={MUTED}>{shortNumber(t)}</text></g>
             : <g key={t}><line x1={plot.x} x2={plot.x + plot.w} y1={scaleV(t)} y2={scaleV(t)} stroke={LINE} /><text x={plot.x - 6} y={scaleV(t) + 4} textAnchor="end" fill={MUTED}>{shortNumber(t)}</text></g>))}
-          {data.cats.map((c, i) => {
+          {scatter && xAxis.ticks.map((t) => <g key={`x${t}`}><line x1={xPos(t)} x2={xPos(t)} y1={plot.y} y2={plot.y + plot.h} stroke={LINE} /><text x={xPos(t)} y={plot.y + plot.h + 15} textAnchor="middle" fill={MUTED}>{shortNumber(t)}</text></g>)}
+          {!scatter && data.cats.map((c, i) => {
             const mid = (i + 0.5) / n;
             return horizontal
               ? <text key={i} x={plot.x - 6} y={plot.y + mid * plot.h + 4} textAnchor="end" fill={MUTED}>{trim(c, 22)}</text>
@@ -44,6 +52,13 @@ export function ChartView({ chart, data, w, h }: { chart: Pick<Chart, 'type' | '
               ? <rect key={`${si}-${i}`} x={Math.min(base, at)} y={plot.y + start} width={Math.abs(at - base)} height={bw} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}, ${data.cats[i]}: ${v}`}</title></rect>
               : <rect key={`${si}-${i}`} x={plot.x + start} y={Math.min(base, at)} width={bw} height={Math.abs(at - base)} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}, ${data.cats[i]}: ${v}`}</title></rect>;
           }))}
+          {scatter && data.series.map((s, si) => s.values.map((v, i) => v === null ? null : <circle key={`${si}-${i}`} cx={xPos(xs[i])} cy={scaleV(v)} r={4.5} fill={PALETTE[si % PALETTE.length]}><title>{`${s.name}: (${xs[i]}, ${v})`}</title></circle>))}
+          {type === 'area' && data.series.map((s, si) => {
+            const pts = s.values.map((v, i) => [plot.x + ((i + 0.5) / n) * plot.w, scaleV(v ?? 0)] as const);
+            if (!pts.length) return null;
+            const base = scaleV(Math.max(axis.lo, Math.min(0, axis.hi))), color = PALETTE[si % PALETTE.length];
+            return <g key={si}><polygon points={`${pts[0][0]},${base} ${pts.map((p) => p.join(',')).join(' ')} ${pts[pts.length - 1][0]},${base}`} fill={color} fillOpacity={0.4} /><polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" /></g>;
+          })}
           {type === 'line' && data.series.map((s, si) => {
             const pts = s.values.map((v, i) => (v === null ? null : [plot.x + ((i + 0.5) / n) * plot.w, scaleV(v)] as const));
             const color = PALETTE[si % PALETTE.length];
@@ -68,10 +83,10 @@ const itemWidth = (name: string) => 15 + Math.min(name.length, 18) * 6.6 + 16;
 const legendLayout = (names: string[]) => { let x = 0; return names.map((n) => { const p = { x }; x += itemWidth(n); return p; }); };
 const legendWidth = (names: string[]) => Math.min(names.reduce((a, n) => a + itemWidth(n), 0), 900);
 
-function Pie({ data, cx, cy, r }: { data: ChartData; cx: number; cy: number; r: number }) {
+function Pie({ data, cx, cy, r, muted, bg }: { data: ChartData; cx: number; cy: number; r: number; muted: string; bg: string }) {
   const vals = (data.series[0]?.values ?? []).map((v) => (v !== null && v > 0 ? v : 0));
   const total = vals.reduce((a, b) => a + b, 0);
-  if (!total) return <text x={cx} y={cy} textAnchor="middle" fill={MUTED}>No positive numbers in the data range</text>;
+  if (!total) return <text x={cx} y={cy} textAnchor="middle" fill={muted}>No positive numbers in the data range</text>;
   let a0 = -Math.PI / 2;
   return (
     <g>
@@ -84,7 +99,7 @@ function Pie({ data, cx, cy, r }: { data: ChartData; cx: number; cy: number; r: 
         a0 = a1;
         return (
           <g key={i}>
-            <path d={d} fill={PALETTE[i % PALETTE.length]} stroke="hsl(var(--bg))" strokeWidth={1.5}><title>{`${data.cats[i]}: ${v} (${Math.round((v / total) * 100)}%)`}</title></path>
+            <path d={d} fill={PALETTE[i % PALETTE.length]} stroke={bg} strokeWidth={1.5}><title>{`${data.cats[i]}: ${v} (${Math.round((v / total) * 100)}%)`}</title></path>
             {v / total > 0.06 && <text x={cx + r * 0.62 * Math.cos(mid)} y={cy + r * 0.62 * Math.sin(mid) + 4} textAnchor="middle" fill="#fff" fontWeight={600}>{Math.round((v / total) * 100)}%</text>}
           </g>
         );

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BringToFront, Circle, Copy, Image as ImageIcon, Italic, LayoutTemplate, List, ListOrdered, Minus, MoveRight, PaintBucket, Palette, Play, Plus, Redo2, RotateCw, SendToBack, Square, Table2, Trash2, Type, Underline, Undo2 } from 'lucide-react';
+import { BarChart3, AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BringToFront, Circle, Copy, Image as ImageIcon, Italic, LayoutTemplate, List, ListOrdered, Minus, MoveRight, PaintBucket, Palette, Play, Plus, Redo2, RotateCw, SendToBack, Square, Table2, Trash2, Type, Underline, Undo2 } from 'lucide-react';
 import { SlideCanvas, SlideStage, type CellRef, type Patch } from './SlideCanvas.tsx';
 import { Present } from './Present.tsx';
-import { bounds, clampFrame, cloneSlide, DEFAULT_SIZE, para, textBox, uid, type Deck, type El, type Geometry, type ImageEl, type LineEl, type Para, type Run, type Slide, type TableEl, type TCell, type TextEl } from './model.ts';
+import { bounds, clampFrame, cloneSlide, DEFAULT_SIZE, para, textBox, uid, type Deck, type El, type Geometry, type ChartEl, type ImageEl, type LineEl, type Para, type Run, type Slide, type SlideChartType, type TableEl, type TCell, type TextEl, type Transition } from './model.ts';
 import { applyLayout, layoutById, LAYOUTS, slideFromLayout, type Layout } from './layouts.ts';
 import { GEOMETRY_LABELS } from './shapes.ts';
-import { deleteCol, deleteRow, insertCol, insertRow, newTable, resizeTable, setCell } from './tableOps.ts';
+import { deleteCol, deleteRow, insertCol, insertRow, mergeNext, mergeOf, newTable, resizeTable, setCell, unmerge } from './tableOps.ts';
 import { exportPptx, importPptx } from './pptx.ts';
 import { MenuBar, type MenuDef, type MenuItem } from '../components/MenuBar.tsx';
 import { Dialog } from '../components/Dialog.tsx';
+import { ContextMenu } from '../components/ContextMenu.tsx';
 import { FontBox } from '../components/FontBox.tsx';
 import { Btn, Sep, SplitColour } from '../editor/Toolbar.tsx';
 import { StatusBar } from '../editor/StatusBar.tsx';
@@ -54,6 +55,9 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const [present, setPresent] = useState<number | null>(null);
   const [picker, setPicker] = useState<'new' | 'apply' | null>(null);
   const [tableDlg, setTableDlg] = useState<{ rows: number; cols: number } | null>(null);
+  const [ctx, setCtx] = useState<{ at: { x: number; y: number }; kind: 'object' | 'canvas' | 'slide' | 'items'; items?: MenuItem[] } | null>(null);
+  const [cropDlg, setCropDlg] = useState<{ l: string; t: string; r: string; b: string } | null>(null);
+  const [chartDlg, setChartDlg] = useState<{ id?: string; type: SlideChartType; title: string; data: string; error?: string } | null>(null);
   const [recent, setRecent] = useState<{ path: string; name: string }[]>([]);
   const [zoom, setZoom] = usePref('slides.zoom', 0); // 0 = fit
   const [notesOpen, setNotesOpen] = usePref('slides.notes', 'on');
@@ -152,6 +156,60 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
     }),
   }), first);
 
+  // ---- pictures, charts, transitions
+  const image = el?.kind === 'image' ? el : null;
+  const openCrop = () => { if (!image) return; const c = image.crop; const pc = (v: number | undefined) => String(Math.round((v ?? 0) * 100)); setCropDlg({ l: pc(c?.l), t: pc(c?.t), r: pc(c?.r), b: pc(c?.b) }); };
+  const saveCrop = () => {
+    if (!cropDlg || !image) return;
+    const f = (v: string) => Math.max(0, Math.min(90, Number(v.replace(',', '.')) || 0)) / 100;
+    let c = { l: f(cropDlg.l), t: f(cropDlg.t), r: f(cropDlg.r), b: f(cropDlg.b) };
+    if (c.l + c.r > 0.9) c = { ...c, r: 0.9 - c.l }; if (c.t + c.b > 0.9) c = { ...c, b: 0.9 - c.t };
+    const none = !c.l && !c.t && !c.r && !c.b;
+    editEl(image.id, (e) => { const o = { ...(e as ImageEl) }; if (none) delete o.crop; else o.crop = c; return o; }); setCropDlg(null);
+  };
+  const SAMPLE = ',Series 1,Series 2\nNorth,12,9\nSouth,18,14\nEast,7,11\nWest,15,8';
+  const chartText = (c: ChartEl) => [['', ...c.series.map((x) => x.name)], ...c.cats.map((cat, i) => [cat, ...c.series.map((x) => (x.values[i] === null || x.values[i] === undefined ? '' : String(x.values[i])))])].map((r) => r.join(',')).join('\n');
+  const parseChartText = (text: string): { cats: string[]; series: { name: string; values: (number | null)[] }[] } | string => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    if (lines.length < 2) return 'Give a row of series names and at least one row of numbers.';
+    const sepr = lines.some((l) => l.includes('\t')) ? '\t' : lines.some((l) => l.includes(';')) ? ';' : ',';
+    const grid = lines.map((l) => l.split(sepr).map((x) => x.trim()));
+    const names = grid[0].slice(1);
+    if (!names.length) return 'The first row needs the series names after an empty first cell.';
+    const rowsN = grid.slice(1);
+    return { cats: rowsN.map((r) => r[0] ?? ''), series: names.map((name, j) => ({ name: name || `Series ${j + 1}`, values: rowsN.map((r) => { const v = (r[j + 1] ?? '').replace(',', '.'); return v === '' || Number.isNaN(Number(v)) ? null : Number(v); }) })) };
+  };
+  const openChartDlg = (id?: string) => { const c = id ? slide.els.find((e) => e.id === id) : undefined; setChartDlg(c?.kind === 'chart' ? { id, type: c.type, title: c.title, data: chartText(c) } : { type: 'column', title: '', data: SAMPLE }); };
+  const saveChart = () => {
+    if (!chartDlg) return;
+    const d = parseChartText(chartDlg.data);
+    if (typeof d === 'string') { setChartDlg({ ...chartDlg, error: d }); return; }
+    if (chartDlg.id) editEl(chartDlg.id, (e) => ({ ...(e as ChartEl), type: chartDlg.type, title: chartDlg.title, ...d }));
+    else addEl({ id: uid(), kind: 'chart', type: chartDlg.type, title: chartDlg.title, ...d, x: Math.round(deck.w * 0.2), y: Math.round(deck.h * 0.2), w: Math.round(deck.w * 0.6), h: Math.round(deck.h * 0.6) });
+    setChartDlg(null);
+  };
+  const TRANSITIONS: [Transition | undefined, string][] = [[undefined, 'None'], ['fade', 'Fade'], ['push', 'Push'], ['wipe', 'Wipe'], ['zoom', 'Zoom']];
+  const setTrans = (t: Transition | undefined, all = false) => commit((d) => ({ ...d, slides: d.slides.map((x, i) => (all || i === idx ? (() => { const o = { ...x }; if (t) o.trans = t; else delete o.trans; return o; })() : x)) }));
+
+  /** one step forward (+1) or backward (-1) in the stacking order */
+  const orderStep = (d: 1 | -1) => {
+    if (!sels.length) return;
+    editSlide((sl) => {
+      const els = [...sl.els];
+      const idxs = els.map((e, i) => (selected.includes(e.id) ? i : -1)).filter((i) => i >= 0);
+      for (const i of d === 1 ? [...idxs].reverse() : idxs) { const j = i + d; if (j < 0 || j >= els.length || selected.includes(els[j].id)) continue; [els[i], els[j]] = [els[j], els[i]]; }
+      return { ...sl, els };
+    });
+  };
+  /** the selection as a whole, moved to the middle of the slide */
+  const centerOnPage = (axis: 'h' | 'v') => {
+    if (!sels.length) return;
+    const bs = sels.map(bounds), x1 = Math.min(...bs.map((q) => q.x)), x2 = Math.max(...bs.map((q) => q.x + q.w)), y1 = Math.min(...bs.map((q) => q.y)), y2 = Math.max(...bs.map((q) => q.y + q.h));
+    const dx = axis === 'h' ? deck.w / 2 - (x1 + x2) / 2 : 0, dy = axis === 'v' ? deck.h / 2 - (y1 + y2) / 2 : 0;
+    editSel((e) => ({ ...e, x: Math.round(e.x + dx), y: Math.round(e.y + dy) }) as El);
+  };
+  const stepSize = (d: number) => { const n = Math.max(1, Math.min(400, Math.round((sizeNow + d) * 10) / 10)); formatRuns({ size: n }); };
+
   // ---- arrange
   const alignTo = (how: 'left' | 'centre' | 'right' | 'top' | 'middle' | 'bottom') => {
     if (!sels.length) return;
@@ -231,11 +289,25 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       const t = e.target as HTMLElement | null;
       const typing = !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
       const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      if (document.querySelector('[role=dialog][aria-modal]')) return; // a dialog is open: its keys are its own (Esc closes it, Delete edits its text)
       if (mod && k === 's') { e.preventDefault(); e.stopPropagation(); if (editing) editRef.current?.blur(); setTimeout(() => void doSave(e.shiftKey), 0); return; }
       if (mod && k === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) h.redo(); else h.undo(); return; }
       if (mod && k === 'y' && !typing) { e.preventDefault(); h.redo(); return; }
-      if (e.key === 'F5') { e.preventDefault(); setPresent(e.shiftKey ? idx : 0); return; }
+      if (e.key === 'F5') { e.preventDefault(); setPresent(e.ctrlKey || e.metaKey ? (e.shiftKey ? 0 : idx) : e.shiftKey ? idx : 0); return; }
+      if (mod && k === 'm' && !typing) { e.preventDefault(); addLayout(layoutById('content')); return; }
       if (typing || editing || editCell) return;
+      if (mod && k === 'b' && canText) { e.preventDefault(); toggle('b'); return; }
+      if (mod && k === 'i' && canText) { e.preventDefault(); toggle('i'); return; }
+      if (mod && k === 'u' && canText && !table) { e.preventDefault(); toggle('u'); return; }
+      if (mod && e.shiftKey && ['l', 'e', 'r', 'j'].includes(k) && canText) { e.preventDefault(); setAlign(k === 'l' ? 'left' : k === 'e' ? 'center' : k === 'r' ? 'right' : 'justify'); return; }
+      if (mod && e.shiftKey && e.code === 'Digit8' && textEls.length) { e.preventDefault(); toggleList('bullet'); return; }
+      if (mod && e.shiftKey && e.code === 'Digit7' && textEls.length) { e.preventDefault(); toggleList('num'); return; }
+      if (mod && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        if (sels.length) { if (e.shiftKey) order(e.key === 'ArrowUp'); else orderStep(e.key === 'ArrowUp' ? 1 : -1); } // on the slide: stacking order
+        else moveSlide(idx, e.key === 'ArrowUp' ? (e.shiftKey ? 0 : idx - 1) : e.shiftKey ? deck.slides.length - 1 : idx + 1); // no object selected: move the slide
+        return;
+      }
       if (mod && k === 'a') { e.preventDefault(); setSelected(slide.els.map((x) => x.id)); }
       else if (mod && k === 'd') { e.preventDefault(); dupEl(); }
       else if (mod && k === 'c' && sels.length) { copy(); }
@@ -261,6 +333,36 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const newItems: MenuItem[] = LAYOUTS.map((l) => ({ label: l.label, run: () => addLayout(l) }));
   const layoutItems: MenuItem[] = LAYOUTS.map((l) => ({ label: l.label, run: () => useLayout(l) }));
   const hasSel = sels.length > 0;
+  const orderItems: MenuItem[] = [{ label: 'Bring to front', keys: 'Ctrl+Shift+↑', disabled: !hasSel, run: () => order(true) }, { label: 'Bring forward', keys: 'Ctrl+↑', disabled: !hasSel, run: () => orderStep(1) }, { label: 'Send backward', keys: 'Ctrl+↓', disabled: !hasSel, run: () => orderStep(-1) }, { label: 'Send to back', keys: 'Ctrl+Shift+↓', disabled: !hasSel, run: () => order(false) }];
+  const alignH: MenuItem[] = [{ label: 'Left', disabled: !hasSel, run: () => alignTo('left') }, { label: 'Center', disabled: !hasSel, run: () => alignTo('centre') }, { label: 'Right', disabled: !hasSel, run: () => alignTo('right') }];
+  const alignV: MenuItem[] = [{ label: 'Top', disabled: !hasSel, run: () => alignTo('top') }, { label: 'Middle', disabled: !hasSel, run: () => alignTo('middle') }, { label: 'Bottom', disabled: !hasSel, run: () => alignTo('bottom') }];
+  const distributeItems: MenuItem[] = [{ label: 'Horizontally', disabled: sels.length < 3, run: () => distribute('x') }, { label: 'Vertically', disabled: sels.length < 3, run: () => distribute('y') }];
+  const centerItems: MenuItem[] = [{ label: 'Horizontally', disabled: !hasSel, run: () => centerOnPage('h') }, { label: 'Vertically', disabled: !hasSel, run: () => centerOnPage('v') }];
+  const rotateItems: MenuItem[] = [{ label: 'Rotate clockwise 90°', disabled: !hasSel, run: () => turn(90) }, { label: 'Rotate counter-clockwise 90°', disabled: !hasSel, run: () => turn(-90) }, { label: 'Reset rotation', disabled: !sels.some((e) => e.rot), run: () => editSel((e) => ({ ...e, rot: undefined }) as El) }];
+  const tableRowCol = (t: TableEl, at: CellRef | null): MenuItem[] => [
+    { label: 'Insert row above', run: () => tableEdit((x) => insertRow(x, at?.r ?? 0)) }, { label: 'Insert row below', run: () => tableEdit((x) => insertRow(x, (at?.r ?? x.rows.length - 1) + 1)) },
+    { label: 'Insert column left', run: () => tableEdit((x) => insertCol(x, at?.c ?? 0)) }, { label: 'Insert column right', run: () => tableEdit((x) => insertCol(x, (at?.c ?? x.cols.length - 1) + 1)) },
+    { label: 'Delete row', run: () => tableEdit((x) => deleteRow(x, at?.r ?? x.rows.length - 1)) }, { label: 'Delete column', run: () => tableEdit((x) => deleteCol(x, at?.c ?? x.cols.length - 1)) }, sep,
+    { label: 'Merge cells right', disabled: !at, run: () => at && tableEdit((x) => mergeNext(x, at.r, at.c, 'right')) }, { label: 'Merge cells down', disabled: !at, run: () => at && tableEdit((x) => mergeNext(x, at.r, at.c, 'down')) },
+    { label: 'Unmerge cells', disabled: !at || !mergeOf(t, at.r, at.c), run: () => at && tableEdit((x) => unmerge(x, at.r, at.c)) },
+  ];
+  const slideItems: MenuItem[] = [
+    { label: 'New slide', keys: 'Ctrl+M', run: () => addLayout(layoutById('content')) }, { label: 'Duplicate slide', run: dupSlide }, { label: 'Delete slide', run: delSlide }, sep,
+    { label: 'Move slide', sub: [{ label: 'Move slide up', disabled: idx === 0, run: () => moveSlide(idx, idx - 1) }, { label: 'Move slide down', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, idx + 1) }, { label: 'Move slide to beginning', disabled: idx === 0, run: () => moveSlide(idx, 0) }, { label: 'Move slide to end', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, deck.slides.length - 1) }] }, sep,
+    { label: 'Change background', sub: [...BG.map(([l, c]): MenuItem => ({ label: l, check: (slide.bg ?? null) === c, run: () => editSlide((s0) => ({ ...s0, bg: c ?? undefined })) })), sep, { label: 'Use on every slide', run: () => commit((d) => ({ ...d, slides: d.slides.map((s0) => ({ ...s0, bg: slide.bg })) })) }] },
+    { label: 'Apply layout', sub: [...layoutItems, sep, { label: 'More layouts…', run: () => setPicker('apply') }] },
+    { label: 'Change theme', sub: DESIGNS.map((g) => ({ label: g.name, run: () => applyDesign(g) })) },
+    { label: 'Transition', sub: [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply to all slides', run: () => setTrans(slide.trans, true) }] },
+    { label: 'Slide size', sub: [{ label: 'Widescreen 16:9', check: Math.round((deck.w / deck.h) * 100) === 178, run: () => resizeDeck(1280, 720) }, { label: 'Standard 4:3', check: Math.round((deck.w / deck.h) * 100) === 133, run: () => resizeDeck(960, 720) }] },
+  ];
+  const objectItems = (): MenuItem[] => [
+    { label: 'Cut', keys: 'Ctrl+X', disabled: !hasSel, run: () => { copy(); delEl(); } }, { label: 'Copy', keys: 'Ctrl+C', disabled: !hasSel, run: copy }, { label: 'Paste', keys: 'Ctrl+V', disabled: !clip.current.length, run: () => paste() },
+    { label: 'Duplicate', keys: 'Ctrl+D', disabled: !hasSel, run: dupEl }, { label: 'Delete', keys: 'Delete', disabled: !hasSel, run: delEl }, sep,
+    { label: 'Order', sub: orderItems }, { label: 'Align horizontally', sub: alignH }, { label: 'Align vertically', sub: alignV }, { label: 'Center on page', sub: centerItems }, { label: 'Rotate', sub: rotateItems },
+    ...(table ? [sep, ...tableRowCol(table, activeCell)] : []),
+    ...(image ? [sep, { label: 'Crop image…', run: openCrop }] : []),
+    ...(el?.kind === 'chart' ? [sep, { label: 'Edit chart…', run: () => openChartDlg(el.id) }] : []),
+  ];
   const menus: MenuDef[] = [
     { label: 'File', items: [
       { label: 'Home', keys: 'Ctrl+Alt+H', run: () => goHome(navigate) }, sep,
@@ -269,50 +371,56 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       { label: 'Save', keys: 'Ctrl+S', run: () => void doSave() }, { label: 'Save as…', keys: 'Ctrl+Shift+S', run: () => void doSave(true) }, { label: 'Reset session edits', run: reset }, sep, { label: 'Quit', keys: 'Ctrl+Q', run: () => desktop()?.windowControl?.('close') },
     ] },
     { label: 'Edit', items: [
-      { label: 'Undo', keys: 'Ctrl+Z', disabled: !h.canUndo, run: h.undo }, { label: 'Redo', keys: 'Ctrl+Shift+Z', disabled: !h.canRedo, run: h.redo }, sep,
+      { label: 'Undo', keys: 'Ctrl+Z', disabled: !h.canUndo, run: h.undo }, { label: 'Redo', keys: 'Ctrl+Y', disabled: !h.canRedo, run: h.redo }, sep,
       { label: 'Cut', keys: 'Ctrl+X', run: () => edit('cut') }, { label: 'Copy', keys: 'Ctrl+C', run: () => edit('copy') }, { label: 'Paste', keys: 'Ctrl+V', run: () => edit('paste') }, sep,
-      { label: 'Select all', keys: 'Ctrl+A', run: () => setSelected(slide.els.map((x) => x.id)) }, { label: 'Duplicate', keys: 'Ctrl+D', disabled: !hasSel, run: dupEl }, { label: 'Delete', keys: 'Delete', disabled: !hasSel, run: delEl },
+      { label: 'Select all', keys: 'Ctrl+A', run: () => setSelected(slide.els.map((x) => x.id)) }, { label: 'Select none', keys: 'Esc', run: clearSel }, sep,
+      { label: 'Delete', keys: 'Delete', disabled: !hasSel, run: delEl }, { label: 'Duplicate', keys: 'Ctrl+D', disabled: !hasSel, run: dupEl },
     ] },
     { label: 'View', items: [
-      { label: 'Present from the first slide', keys: 'F5', run: () => setPresent(0) }, { label: 'Present from this slide', keys: 'Shift+F5', run: () => setPresent(idx) }, sep,
-      { label: 'Speaker notes', check: notesOpen === 'on', run: () => setNotesOpen(notesOpen === 'on' ? 'off' : 'on') }, { label: 'Fit slide to window', check: zoom === 0, run: () => setZoom(0) }, { label: 'Zoom in', run: () => setZoom(Math.min(300, Math.round(scale * 100) + 10)) }, { label: 'Zoom out', run: () => setZoom(Math.max(20, Math.round(scale * 100) - 10)) }, sep,
+      { label: 'Slideshow', keys: 'Ctrl+F5', run: () => setPresent(idx) }, { label: 'Present from beginning', keys: 'Ctrl+Shift+F5', run: () => setPresent(0) }, sep,
+      { label: 'Zoom', sub: [{ label: 'Fit', check: zoom === 0, run: () => setZoom(0) }, ...[50, 75, 100, 150, 200].map((z): MenuItem => ({ label: `${z}%`, check: zoom === z, run: () => setZoom(z) }))] }, { label: 'Zoom in', run: () => setZoom(Math.min(300, Math.round(scale * 100) + 10)) }, { label: 'Zoom out', run: () => setZoom(Math.max(20, Math.round(scale * 100) - 10)) }, sep,
+      { label: 'Show speaker notes', check: notesOpen === 'on', run: () => setNotesOpen(notesOpen === 'on' ? 'off' : 'on') }, sep,
       { label: 'Full screen', keys: 'F11', run: () => desktop()?.windowControl?.('fullscreen') },
     ] },
     { label: 'Insert', items: [
-      { label: 'Text box', run: addText }, { label: 'Shape', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], run: () => addShape(g) })) }, { label: 'Line', run: () => addLine(false) }, { label: 'Arrow', run: () => addLine(true) },
-      { label: 'Table…', run: () => setTableDlg({ rows: 3, cols: 3 }) }, { label: 'Image…', run: () => fileInput.current?.click() }, sep, { label: 'New slide', sub: newItems },
-    ] },
-    { label: 'Slide', items: [
-      { label: 'New slide', sub: newItems }, { label: 'Layout', sub: layoutItems }, { label: 'Choose a layout…', run: () => setPicker('apply') }, { label: 'Duplicate slide', run: dupSlide }, { label: 'Delete slide', run: delSlide }, sep,
-      { label: 'Move up', disabled: idx === 0, run: () => moveSlide(idx, idx - 1) }, { label: 'Move down', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, idx + 1) }, sep,
-      { label: 'Design', sub: DESIGNS.map((g) => ({ label: g.name, run: () => applyDesign(g) })) },
-      { label: 'Background colour', sub: [...BG.map(([l, c]): MenuItem => ({ label: l, check: (slide.bg ?? null) === c, run: () => editSlide((s) => ({ ...s, bg: c ?? undefined })) })), { label: 'Use on every slide', run: () => commit((d) => ({ ...d, slides: d.slides.map((s) => ({ ...s, bg: slide.bg })) })) }] },
-      { label: 'Slide size', sub: [{ label: 'Widescreen 16:9', check: Math.round((deck.w / deck.h) * 100) === 178, run: () => resizeDeck(1280, 720) }, { label: 'Standard 4:3', check: Math.round((deck.w / deck.h) * 100) === 133, run: () => resizeDeck(960, 720) }] },
+      { label: 'Image…', run: () => fileInput.current?.click() }, { label: 'Text box', run: addText }, { label: 'Shape', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], run: () => addShape(g) })) },
+      { label: 'Table…', run: () => setTableDlg({ rows: 3, cols: 3 }) }, { label: 'Chart…', run: () => openChartDlg() }, { label: 'Line', sub: [{ label: 'Line', run: () => addLine(false) }, { label: 'Arrow', run: () => addLine(true) }] }, sep,
+      { label: 'New slide', keys: 'Ctrl+M', run: () => addLayout(layoutById('content')) }, { label: 'New slide with layout', sub: newItems },
     ] },
     { label: 'Format', items: [
-      { label: 'Bold', check: flag('b'), disabled: !canText, run: () => toggle('b') }, { label: 'Italic', check: flag('i'), disabled: !canText, run: () => toggle('i') }, { label: 'Underline', check: flag('u'), disabled: !canText || !!table, run: () => toggle('u') }, sep,
-      { label: 'Align left', run: () => setAlign('left') }, { label: 'Align centre', run: () => setAlign('center') }, { label: 'Align right', run: () => setAlign('right') }, { label: 'Bulleted list', run: () => toggleList('bullet') }, { label: 'Numbered list', run: () => toggleList('num') },
-      { label: 'Line spacing', sub: LINE_SPACING.map(([l, v]): MenuItem => ({ label: l, run: () => setSpacing(v) })) }, sep,
-      { label: 'Text position', disabled: textEls.length === 0, sub: (['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: v[0].toUpperCase() + v.slice(1), check: el?.kind === 'text' && (el.valign ?? 'top') === v, run: () => editSel((e) => (e.kind === 'text' ? { ...e, valign: v } : e)) })) },
-      { label: 'Shape', disabled: !el || el.kind !== 'text', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], check: el?.kind === 'text' && (el.geometry ?? 'rect') === g, run: () => editSel((e) => (e.kind === 'text' ? { ...e, geometry: g === 'rect' ? undefined : g } : e)) })) },
-      { label: 'Dashed line', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.dash), run: () => patchLines({ dash: !lineEls.every((l) => l.dash) || undefined }) },
-      { label: 'Arrow at the start', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.head), run: () => patchLines({ head: !lineEls.every((l) => l.head) || undefined }) },
-      { label: 'Arrow at the end', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.tail), run: () => patchLines({ tail: !lineEls.every((l) => l.tail) || undefined }) },
+      { label: 'Text', sub: [
+        { label: 'Bold', keys: 'Ctrl+B', check: flag('b'), disabled: !canText, run: () => toggle('b') }, { label: 'Italic', keys: 'Ctrl+I', check: flag('i'), disabled: !canText, run: () => toggle('i') }, { label: 'Underline', keys: 'Ctrl+U', check: flag('u'), disabled: !canText || !!table, run: () => toggle('u') }, sep,
+        { label: 'Increase font size', keys: 'Ctrl+Shift+>', disabled: !canText, run: () => stepSize(2) }, { label: 'Decrease font size', keys: 'Ctrl+Shift+<', disabled: !canText, run: () => stepSize(-2) },
+      ] },
+      { label: 'Align & indent', sub: [{ label: 'Left', keys: 'Ctrl+Shift+L', run: () => setAlign('left') }, { label: 'Center', keys: 'Ctrl+Shift+E', run: () => setAlign('center') }, { label: 'Right', keys: 'Ctrl+Shift+R', run: () => setAlign('right') }, { label: 'Justified', keys: 'Ctrl+Shift+J', run: () => setAlign('justify') }, sep,
+        ...(['top', 'middle', 'bottom'] as const).map((v): MenuItem => ({ label: `Align ${v}`, disabled: textEls.length === 0, check: el?.kind === 'text' && (el.valign ?? 'top') === v, run: () => editSel((e) => (e.kind === 'text' ? { ...e, valign: v } : e)) }))] },
+      { label: 'Line & paragraph spacing', sub: LINE_SPACING.map(([l, v]): MenuItem => ({ label: l, run: () => setSpacing(v) })) },
+      { label: 'Bullets & numbering', sub: [{ label: 'Bulleted list', keys: 'Ctrl+Shift+8', run: () => toggleList('bullet') }, { label: 'Numbered list', keys: 'Ctrl+Shift+7', run: () => toggleList('num') }] }, sep,
+      { label: 'Borders & lines', sub: [
+        { label: 'Border weight', sub: [1, 2, 3, 4, 6, 8].map((w): MenuItem => ({ label: `${w}px`, check: weightNow === w, run: () => setWeight(w) })) },
+        { label: 'Border dash', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.dash), run: () => patchLines({ dash: !lineEls.every((l) => l.dash) || undefined }) },
+        { label: 'Line start arrow', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.head), run: () => patchLines({ head: !lineEls.every((l) => l.head) || undefined }) },
+        { label: 'Line end arrow', disabled: lineEls.length === 0, check: lineEls.length > 0 && lineEls.every((l) => l.tail), run: () => patchLines({ tail: !lineEls.every((l) => l.tail) || undefined }) },
+      ] },
+      { label: 'Change shape', disabled: !el || el.kind !== 'text', sub: SHAPES.map((g) => ({ label: GEOMETRY_LABELS[g], check: el?.kind === 'text' && (el.geometry ?? 'rect') === g, run: () => editSel((e) => (e.kind === 'text' ? { ...e, geometry: g === 'rect' ? undefined : g } : e)) })) },
+      { label: 'Crop image…', disabled: !image, run: openCrop }, { label: 'Edit chart…', disabled: el?.kind !== 'chart', run: () => el && openChartDlg(el.id) },
     ] },
+    { label: 'Slide', items: slideItems },
     { label: 'Arrange', items: [
-      { label: 'Bring to front', disabled: !hasSel, run: () => order(true) }, { label: 'Send to back', disabled: !hasSel, run: () => order(false) }, sep,
-      { label: 'Align left', disabled: !hasSel, run: () => alignTo('left') }, { label: 'Align centre', disabled: !hasSel, run: () => alignTo('centre') }, { label: 'Align right', disabled: !hasSel, run: () => alignTo('right') },
-      { label: 'Align top', disabled: !hasSel, run: () => alignTo('top') }, { label: 'Align middle', disabled: !hasSel, run: () => alignTo('middle') }, { label: 'Align bottom', disabled: !hasSel, run: () => alignTo('bottom') }, sep,
-      { label: 'Distribute horizontally', disabled: sels.length < 3, run: () => distribute('x') }, { label: 'Distribute vertically', disabled: sels.length < 3, run: () => distribute('y') }, sep,
-      { label: 'Rotate right 90°', disabled: !hasSel, run: () => turn(90) }, { label: 'Rotate left 90°', disabled: !hasSel, run: () => turn(-90) }, { label: 'Reset rotation', disabled: !sels.some((e) => e.rot), run: () => editSel((e) => ({ ...e, rot: undefined }) as El) },
+      { label: 'Order', sub: orderItems }, sep, { label: 'Align horizontally', sub: alignH }, { label: 'Align vertically', sub: alignV }, { label: 'Distribute', sub: distributeItems }, { label: 'Center on page', sub: centerItems }, sep, { label: 'Rotate', sub: rotateItems },
     ] },
-    ...(table ? [{ label: 'Table', items: [
-      { label: 'Insert row above', run: () => tableEdit((t) => insertRow(t, activeCell?.r ?? 0)) }, { label: 'Insert row below', run: () => tableEdit((t) => insertRow(t, (activeCell?.r ?? t.rows.length - 1) + 1)) },
-      { label: 'Insert column left', run: () => tableEdit((t) => insertCol(t, activeCell?.c ?? 0)) }, { label: 'Insert column right', run: () => tableEdit((t) => insertCol(t, (activeCell?.c ?? t.cols.length - 1) + 1)) }, sep,
-      { label: 'Delete row', run: () => tableEdit((t) => deleteRow(t, activeCell?.r ?? t.rows.length - 1)) }, { label: 'Delete column', run: () => tableEdit((t) => deleteCol(t, activeCell?.c ?? t.cols.length - 1)) }, sep,
-      { label: 'Header row', check: table.header, run: () => tableEdit((t) => ({ ...t, header: !t.header })) }, { label: 'Banded rows', check: table.banded, run: () => tableEdit((t) => ({ ...t, banded: !t.banded })) },
-    ] } as MenuDef] : []),
+    ...(table ? [{ label: 'Table', items: [...tableRowCol(table, activeCell), sep, { label: 'Header row', check: table.header, run: () => tableEdit((t) => ({ ...t, header: !t.header })) }, { label: 'Banded rows', check: table.banded, run: () => tableEdit((t) => ({ ...t, banded: !t.banded })) }] } as MenuDef] : []),
   ];
+  /** a menu under a toolbar button (Background, Layout, Theme, Transition) */
+  const popFrom = (e: React.MouseEvent, items: MenuItem[]) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setCtx({ at: { x: r.left, y: r.bottom + 2 }, kind: 'items', items }); };
+  /** right-click on the slide: the menu is built when it is drawn, so it sees the selection this click just made */
+  const canvasContext = (c: { x: number; y: number; id: string | null; cell: CellRef | null }) => {
+    if (c.id && !selected.includes(c.id)) setSelected([c.id]);
+    if (c.cell) setCell_(c.cell);
+    setCtx({ at: { x: c.x, y: c.y }, kind: c.id ? 'object' : 'canvas' });
+  };
+  const canvasItems = (): MenuItem[] => [{ label: 'Paste', keys: 'Ctrl+V', disabled: !clip.current.length, run: () => paste() }, { label: 'Select all', keys: 'Ctrl+A', run: () => setSelected(slide.els.map((x) => x.id)) }, sep, { label: 'Apply layout', sub: layoutItems }, { label: 'Change background', sub: BG.map(([l, col]): MenuItem => ({ label: l, check: (slide.bg ?? null) === col, run: () => editSlide((s0) => ({ ...s0, bg: col ?? undefined })) })) }, { label: 'Transition', sub: TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })) }];
+  const ctxItems = (): MenuItem[] => (!ctx ? [] : ctx.kind === 'object' ? objectItems() : ctx.kind === 'canvas' ? canvasItems() : ctx.kind === 'slide' ? slideItems : ctx.items ?? []);
 
   const thumbScale = 138 / deck.w;
   return (
@@ -332,59 +440,59 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       )}
       <div role="toolbar" aria-label="Formatting" className="tb-bar bt-top flex flex-wrap items-center gap-px px-2 py-1">
         <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
-        <Btn label="Redo (Ctrl+Shift+Z)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
+        <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
         <Sep />
-        <Btn label="New slide" onClick={() => addLayout(layoutById('content'))}><span className="flex items-center gap-1 text-sm"><Plus size={15} />Slide</span></Btn>
+        <Btn label="New slide (Ctrl+M)" onClick={() => addLayout(layoutById('content'))}><Plus size={16} /></Btn>
         <Btn label="Choose a layout for the new slide" onClick={() => setPicker('new')}><LayoutTemplate size={16} /></Btn>
-        <Btn label="Change this slide's layout" onClick={() => setPicker('apply')}><span className="text-xs">Layout</span></Btn>
         <Sep />
         <Btn label="Text box" onClick={addText}><Type size={16} /></Btn>
-        <Btn label="Rectangle" onClick={() => addShape('rect')}><Square size={16} /></Btn>
-        <Btn label="Ellipse" onClick={() => addShape('ellipse')}><Circle size={16} /></Btn>
-        <select aria-label="Insert shape" className="input !w-14 !px-1 !py-1 text-sm" value="" title="More shapes" onChange={(e) => { if (e.target.value) addShape(e.target.value as Geometry); e.target.value = ''; }}>
-          <option value="">★</option>{SHAPES.map((g) => <option key={g} value={g}>{GEOMETRY_LABELS[g]}</option>)}
+        <Btn label="Image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
+        <select aria-label="Shape" className="input !w-14 !px-1 !py-1 text-sm" value="" title="Shape" onChange={(e) => { if (e.target.value) addShape(e.target.value as Geometry); e.target.value = ''; }}>
+          <option value="">▢</option>{SHAPES.map((g) => <option key={g} value={g}>{GEOMETRY_LABELS[g]}</option>)}
         </select>
         <Btn label="Line" onClick={() => addLine(false)}><Minus size={16} /></Btn>
         <Btn label="Arrow" onClick={() => addLine(true)}><MoveRight size={16} /></Btn>
         <Btn label="Table" onClick={() => setTableDlg({ rows: 3, cols: 3 })}><Table2 size={16} /></Btn>
-        <Btn label="Image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
+        <Btn label="Chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>
+        <Sep />
+        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Background" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, (slideItems.find((i) => 'label' in i && i.label === 'Change background') as { sub: MenuItem[] }).sub)}>Background</button>
+        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Layout" onMouseDown={(e) => e.preventDefault()} onClick={() => setPicker('apply')}>Layout</button>
+        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Theme" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, DESIGNS.map((g): MenuItem => ({ label: g.name, run: () => applyDesign(g) })))}>Theme</button>
+        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Transition" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply to all slides', run: () => setTrans(slide.trans, true) }])}>Transition</button>
         <Sep />
         <FontBox value={fontNow} onPick={(f) => formatRuns({ font: f })} />
-        <input aria-label="Font size" list="slide-font-sizes" className="input !w-14 !px-1 !py-1 text-center text-sm" inputMode="decimal" key={`${selected.join()}-${sizeNow}`} defaultValue={String(sizeNow)} disabled={!canText}
+        <Btn label="Decrease font size" disabled={!canText} onClick={() => stepSize(-2)}><span className="text-base leading-none">−</span></Btn>
+        <input aria-label="Font size" list="slide-font-sizes" className="input !w-12 !px-1 !py-1 text-center text-sm" inputMode="decimal" key={`${selected.join()}-${sizeNow}`} defaultValue={String(sizeNow)} disabled={!canText}
           onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onBlur={(e) => { const n = Number(e.target.value.replace(',', '.')); if (n >= 1 && n <= 400 && n !== sizeNow) formatRuns({ size: n }); }} />
-        <datalist id="slide-font-sizes">{[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 44, 54, 66, 80, ...SIZES.filter((s) => s > 80)].map((z) => <option key={z} value={z} />)}</datalist>
+        <Btn label="Increase font size" disabled={!canText} onClick={() => stepSize(2)}><span className="text-base leading-none">+</span></Btn>
+        <datalist id="slide-font-sizes">{[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 44, 54, 66, 80, ...SIZES.filter((s0) => s0 > 80)].map((z) => <option key={z} value={z} />)}</datalist>
         <Sep />
-        <Btn label="Bold" active={flag('b')} disabled={!canText} onClick={() => toggle('b')}><Bold size={16} /></Btn>
-        <Btn label="Italic" active={flag('i')} disabled={!canText} onClick={() => toggle('i')}><Italic size={16} /></Btn>
-        <Btn label="Underline" active={flag('u')} disabled={!canText || !!table} onClick={() => toggle('u')}><Underline size={16} /></Btn>
+        <Btn label="Bold (Ctrl+B)" active={flag('b')} disabled={!canText} onClick={() => toggle('b')}><Bold size={16} /></Btn>
+        <Btn label="Italic (Ctrl+I)" active={flag('i')} disabled={!canText} onClick={() => toggle('i')}><Italic size={16} /></Btn>
+        <Btn label="Underline (Ctrl+U)" active={flag('u')} disabled={!canText || !!table} onClick={() => toggle('u')}><Underline size={16} /></Btn>
         <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => formatRuns({ color: c })} onPick={(c) => { setTextColour(c); formatRuns({ color: c }); }} />
+        <Sep />
         <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => setFill(c)} onPick={(c) => { setFillColour(c); setFill(c); }} />
-        <SplitColour label="Outline and line colour" icon={<Palette size={15} />} last={lineColour} onApply={(c) => setOutline(c)} onPick={(c) => { setLineColour(c); setOutline(c); }} />
-        <Btn label="No fill" disabled={textEls.length === 0 || !textEls.some((e) => e.fill)} onClick={() => setFill(undefined)}><span className="text-xs">No fill</span></Btn>
-        <select aria-label="Line weight" className="input !w-16 !px-1 !py-1 text-sm" disabled={!sels.some((e) => e.kind === 'text' || e.kind === 'line')} value={String(weightNow)} onChange={(e) => setWeight(Number(e.target.value))}>
-          {[...new Set([1, 2, 3, 4, 6, 8, weightNow])].sort((a, b) => a - b).map((w) => <option key={w} value={w}>{Math.round(w * 10) / 10} px</option>)}
+        <Btn label="Transparent (no fill)" disabled={textEls.length === 0 || !textEls.some((e) => e.fill)} onClick={() => setFill(undefined)}><span className="text-xs">None</span></Btn>
+        <SplitColour label="Border colour" icon={<Palette size={15} />} last={lineColour} onApply={(c) => setOutline(c)} onPick={(c) => { setLineColour(c); setOutline(c); }} />
+        <select aria-label="Border weight" className="input !w-16 !px-1 !py-1 text-sm" disabled={!sels.some((e) => e.kind === 'text' || e.kind === 'line')} value={String(weightNow)} onChange={(e) => setWeight(Number(e.target.value))}>
+          {[...new Set([1, 2, 3, 4, 6, 8, weightNow])].sort((a0, b0) => a0 - b0).map((w) => <option key={w} value={w}>{Math.round(w * 10) / 10} px</option>)}
         </select>
         <Sep />
-        <Btn label="Align left" disabled={!canText} onClick={() => setAlign('left')}><AlignLeft size={16} /></Btn>
-        <Btn label="Align centre" disabled={!canText} onClick={() => setAlign('center')}><AlignCenter size={16} /></Btn>
-        <Btn label="Align right" disabled={!canText} onClick={() => setAlign('right')}><AlignRight size={16} /></Btn>
-        <Btn label="Bulleted list" disabled={textEls.length === 0} onClick={() => toggleList('bullet')}><List size={16} /></Btn>
-        <Btn label="Numbered list" disabled={textEls.length === 0} onClick={() => toggleList('num')}><ListOrdered size={16} /></Btn>
-        <Sep />
-        <Btn label="Rotate right 90°" disabled={!hasSel} onClick={() => turn(90)}><RotateCw size={16} /></Btn>
-        <Btn label="Bring to front" disabled={!hasSel} onClick={() => order(true)}><BringToFront size={16} /></Btn>
-        <Btn label="Send to back" disabled={!hasSel} onClick={() => order(false)}><SendToBack size={16} /></Btn>
-        <Btn label="Duplicate (Ctrl+D)" disabled={!hasSel} onClick={dupEl}><Copy size={16} /></Btn>
-        <Btn label="Delete" disabled={!hasSel} onClick={delEl}><Trash2 size={16} /></Btn>
+        <Btn label="Align left (Ctrl+Shift+L)" disabled={!canText} onClick={() => setAlign('left')}><AlignLeft size={16} /></Btn>
+        <Btn label="Align center (Ctrl+Shift+E)" disabled={!canText} onClick={() => setAlign('center')}><AlignCenter size={16} /></Btn>
+        <Btn label="Align right (Ctrl+Shift+R)" disabled={!canText} onClick={() => setAlign('right')}><AlignRight size={16} /></Btn>
+        <Btn label="Bulleted list (Ctrl+Shift+8)" disabled={textEls.length === 0} onClick={() => toggleList('bullet')}><List size={16} /></Btn>
+        <Btn label="Numbered list (Ctrl+Shift+7)" disabled={textEls.length === 0} onClick={() => toggleList('num')}><ListOrdered size={16} /></Btn>
         <span className="flex-1" />
-        <button type="button" className="btn btn-accent inline-flex items-center gap-1.5 text-sm" onClick={() => setPresent(0)} title="Present (F5)"><Play size={14} />Present</button>
+        <button type="button" className="btn btn-accent inline-flex items-center gap-1.5 text-sm" onClick={() => setPresent(idx)} title="Slideshow (Ctrl+F5)"><Play size={14} />Slideshow</button>
       </div>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Slides" className="w-44 shrink-0 space-y-1 overflow-y-auto border-r border-line p-2">
           {deck.slides.map((s, i) => (
             <div key={s.id} className={`flex items-start gap-1 ${arrived.has(s.id) ? 'tk-arrive' : ''}`}>
               <span className="w-4 pt-1 text-right text-xs text-muted tabular-nums">{i + 1}</span>
-              <button type="button" className={`slide-thumb ${dragOver === i ? 'drop' : ''}`} aria-current={i === idx} aria-label={`Slide ${i + 1}`} draggable onClick={() => go(i)}
+              <button type="button" className={`slide-thumb ${dragOver === i ? 'drop' : ''}`} aria-current={i === idx} aria-label={`Slide ${i + 1}`} draggable onClick={() => go(i)} onContextMenu={(e) => { e.preventDefault(); go(i); setCtx({ at: { x: e.clientX, y: e.clientY }, kind: 'slide' }); }}
                 onDragStart={() => { dragFrom.current = i; }} onDragOver={(e) => { e.preventDefault(); setDragOver(i); }} onDragLeave={() => setDragOver(null)} onDrop={() => { setDragOver(null); if (dragFrom.current !== null) moveSlide(dragFrom.current, i); dragFrom.current = null; }}>
                 <SlideStage slide={s} deck={deck} scale={thumbScale} />
               </button>
@@ -395,7 +503,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
         <div className="flex min-w-0 flex-1 flex-col">
           <div ref={stage} className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-raised p-6">
             <div key={slide.id} className="tk-swap">
-              <SlideCanvas slide={slide} deck={deck} scale={scale} selected={selected} editing={editing} cell={cell} editCell={editCell} onSelect={(ids) => setSelected(ids)} onEdit={setEditing} onPatch={onPatch} editRef={editRef}
+              <SlideCanvas onContext={canvasContext} onEditChart={openChartDlg} slide={slide} deck={deck} scale={scale} selected={selected} editing={editing} cell={cell} editCell={editCell} onSelect={(ids) => setSelected(ids)} onEdit={setEditing} onPatch={onPatch} editRef={editRef}
                 onText={(id, paras) => { setEditing(null); editEl(id, (e) => ({ ...e, paras }) as TextEl); }}
                 onCell={setCell_} onEditCell={setEditCell}
                 onCommitCell={(c, text, next) => {
@@ -423,6 +531,26 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
                 <span className="text-xs">{l.label}</span>
               </button>
             ))}
+          </div>
+        </Dialog>
+      )}
+      {ctx && <ContextMenu at={ctx.at} items={ctxItems()} onClose={() => setCtx(null)} />}
+      {cropDlg && (
+        <Dialog title="Crop picture" onClose={() => setCropDlg(null)} footer={<><button className="btn mr-auto" onClick={() => setCropDlg({ l: '0', t: '0', r: '0', b: '0' })}>Reset</button><button className="btn" onClick={() => setCropDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveCrop}>Crop</button></>}>
+          <p className="mb-2 text-sm text-muted">How much to cut off each side, in percent of the picture.</p>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {([['l', 'Left'], ['t', 'Top'], ['r', 'Right'], ['b', 'Bottom']] as const).map(([k, l]) => <label key={k} className="grid gap-1">{l}<input aria-label={`Crop ${l.toLowerCase()}`} className="input" inputMode="decimal" value={cropDlg[k]} onChange={(e) => setCropDlg({ ...cropDlg, [k]: e.target.value })} /></label>)}
+          </div>
+        </Dialog>
+      )}
+      {chartDlg && (
+        <Dialog title={chartDlg.id ? 'Edit chart' : 'Insert chart'} wide onClose={() => setChartDlg(null)} footer={<><button className="btn" onClick={() => setChartDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveChart}>{chartDlg.id ? 'Update' : 'Insert'}</button></>}>
+          <div className="grid gap-3 text-sm">
+            <div className="flex gap-3"><label className="grid flex-1 gap-1">Chart type<select aria-label="Chart type" className="input" value={chartDlg.type} onChange={(e) => setChartDlg({ ...chartDlg, type: e.target.value as SlideChartType })}>{([['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['area', 'Area'], ['pie', 'Pie']] as const).map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select></label>
+              <label className="grid flex-[2] gap-1">Title<input aria-label="Chart title" className="input" value={chartDlg.title} onChange={(e) => setChartDlg({ ...chartDlg, title: e.target.value })} /></label></div>
+            <label className="grid gap-1">Numbers (first row: series names; first column: labels; separated by commas, semicolons or tabs, so you can paste from a spreadsheet)
+              <textarea aria-label="Chart data" className="input font-mono" rows={8} value={chartDlg.data} onChange={(e) => setChartDlg({ ...chartDlg, data: e.target.value, error: undefined })} /></label>
+            {chartDlg.error && <p role="alert" className="text-bad">{chartDlg.error}</p>}
           </div>
         </Dialog>
       )}
