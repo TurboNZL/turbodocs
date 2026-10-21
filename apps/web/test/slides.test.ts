@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { exportPptx, importPptx } from '../src/slides/pptx.ts';
-import { textOf, type Deck, type TextEl, type ImageEl } from '../src/slides/model.ts';
+import { textOf, slideCss, slideInk, type Deck, type TextEl, type ImageEl } from '../src/slides/model.ts';
 
 const fixture = (n: string) => new Uint8Array(readFileSync(join(import.meta.dirname, 'fixtures', n)));
 const texts = (d: Deck, i: number) => d.slides[i].els.filter((e): e is TextEl => e.kind === 'text');
@@ -198,5 +198,21 @@ describe('reading charts and merged cells written by python-pptx', () => {
     expect(Math.round(cs[0].w)).toBe(576);
     const t = deck.slides[0].els.find((e): e is TableEl => e.kind === 'table')!;
     expect(t.merges).toEqual([{ r: 0, c: 0, rs: 1, cs: 2 }]); expect(t.cells[0][0].t).toBe('Merged');
+  });
+});
+
+describe('slide backgrounds: colour, gradient and picture', () => {
+  it('survive a save and set the text colour that reads on them', async () => {
+    const png = 'data:image/png;base64,' + readFileSync(join(import.meta.dirname, 'fixtures', 'pic.png')).toString('base64');
+    const deck = newDeck();
+    const a = slideFromLayout(layoutById('title-only'), D), b = slideFromLayout(layoutById('title-only'), D), c = slideFromLayout(layoutById('title-only'), D);
+    a.bg = '#1f6f5c'; b.bgGrad = { from: '#ffffff', to: '#203040', angle: 135 }; c.bgImage = png; c.bgDark = true;
+    deck.slides = [a, b, c];
+    expect(slideInk(a)).toBe('#ffffff'); expect(slideInk(c)).toBe('#ffffff'); expect(slideInk({ bgImage: png })).toBe('#000000'); expect(slideInk({ bgGrad: { from: '#ffffff', to: '#eeeeee', angle: 90 } })).toBe('#000000');
+    expect(slideCss(b)).toBe('linear-gradient(135deg, #ffffff, #203040)'); expect(slideCss(c)).toContain('url("data:image/png');
+    const { deck: again } = await importPptx(await exportPptx(deck));
+    expect(again.slides[0].bg).toBe('#1f6f5c');
+    expect(again.slides[1].bgGrad).toEqual({ from: '#ffffff', to: '#203040', angle: 135 }); expect(again.slides[1].bg).toBeUndefined();
+    expect(again.slides[2].bgImage).toMatch(/^data:image\/png;base64,/);
   });
 });

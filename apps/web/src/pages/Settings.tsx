@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom';
 import { AppearancePicker } from '../components/AppearancePicker.tsx';
 import { AppsTab } from '../components/AppsTab.tsx';
 import { DocsSettings } from '../components/DocsSettings.tsx';
+import { LayoutPicker } from '../components/LayoutPicker.tsx';
 import { GuidesTab } from '../components/GuidesTab.tsx';
 import { ThisApp } from '../components/ThisApp.tsx';
 
@@ -16,7 +17,7 @@ export function SettingsPage() {
       <div role="tablist" aria-label="Settings sections" className="tabs">
         {TABS.map((t) => <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} onClick={() => setParams({ tab: t.id }, { replace: true })}>{t.label}</button>)}
       </div>
-      {tab === 'look' && <AppearancePicker />}
+      {tab === 'look' && <><LayoutPicker /><AppearancePicker /></>}
       {tab === 'apps' && <AppsTab />}
       {tab === 'docs' && <DocsSettings />}
       {tab === 'guides' && <GuidesTab />}

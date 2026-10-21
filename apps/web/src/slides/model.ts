@@ -24,7 +24,9 @@ export type SlideChartType = 'column' | 'bar' | 'line' | 'area' | 'pie';
 export interface ChartEl extends Frame { id: string; kind: 'chart'; type: SlideChartType; title: string; cats: string[]; series: { name: string; values: (number | null)[] }[]; rot?: number }
 export type El = TextEl | ImageEl | LineEl | TableEl | ChartEl;
 export type Transition = 'fade' | 'push' | 'wipe' | 'zoom';
-export interface Slide { id: string; bg?: string; els: El[]; notes: string; /** how the show comes to this slide */ trans?: Transition }
+/** a slide's background: a colour (`bg`), a gradient, or a picture (a data URL; `bgDark` says whether it is dark, so the text colour can follow) */
+export interface Gradient { from: string; to: string; /** degrees, 180 = top to bottom */ angle: number }
+export interface Slide { id: string; bg?: string; bgGrad?: Gradient; bgImage?: string; bgDark?: boolean; els: El[]; notes: string; /** how the show comes to this slide */ trans?: Transition }
 export interface Deck { w: number; h: number; /** the default text font */ font: string; slides: Slide[] }
 
 let counter = 0;
@@ -54,6 +56,18 @@ export const clampFrame = (f: Frame, d: { w: number; h: number }, flat = false):
   return { w, h, x: Math.min(d.w - 20, Math.max(20 - w, f.x)), y: Math.min(d.h - 20, Math.max(20 - h, f.y)) };
 };
 
+/** the text colour that reads on this slide, whatever its background is made of */
+export function slideInk(s: Pick<Slide, 'bg' | 'bgGrad' | 'bgImage' | 'bgDark'>): string {
+  if (s.bgImage) return s.bgDark ? '#ffffff' : '#000000';
+  if (s.bgGrad) { const a = defaultTextColor(s.bgGrad.from), b = defaultTextColor(s.bgGrad.to); return a === b ? a : '#ffffff'; }
+  return defaultTextColor(s.bg);
+}
+/** the CSS background of a slide */
+export function slideCss(s: Pick<Slide, 'bg' | 'bgGrad' | 'bgImage'>): string {
+  if (s.bgImage) return `center / cover no-repeat url("${s.bgImage}")`;
+  if (s.bgGrad) return `linear-gradient(${s.bgGrad.angle}deg, ${s.bgGrad.from}, ${s.bgGrad.to})`;
+  return s.bg ?? '#ffffff';
+}
 /** the colour text has when a run names none: black on a light slide, white on a dark one */
 export function defaultTextColor(bg: string | undefined): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(bg ?? '#ffffff');

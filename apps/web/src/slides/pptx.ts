@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { cellTint, isCovered, mergeOf } from './tableOps.ts';
 import { DOMParser } from '@xmldom/xmldom';
-import { DEFAULT_SIZE, defaultTextColor, uid, type ChartEl, type Crop, type Deck, type El, type Geometry, type LineEl, type Para, type Role, type Run, type Slide, type SlideChartType, type TMerge, type TableEl, type TCell, type TextEl, type Transition } from './model.ts';
+import { DEFAULT_SIZE, defaultTextColor, slideInk, uid, type ChartEl, type Crop, type Deck, type El, type Geometry, type LineEl, type Para, type Role, type Run, type Slide, type SlideChartType, type TMerge, type TableEl, type TCell, type TextEl, type Transition } from './model.ts';
 
 /**
  * .pptx -> Deck. Read straight from the file's XML, like the Word and Excel importers: slides in order, text boxes and placeholders with the position, size,
@@ -73,6 +73,20 @@ function readSlideChart(root: El_, f: { x: number; y: number; w: number; h: numb
   if (!series.length || !n) { warnings.add('A chart without numbers is not shown.'); return null; }
   const title = desc(kid(root, 'chart') ?? root, 'title')[0];
   return { id: uid(), kind: 'chart', type, title: title ? desc(title, 't').map((t) => t.textContent ?? '').join('') : '', cats: Array.from({ length: n }, (_, i) => cats[i] || String(i + 1)), series: series.map((s) => ({ ...s, values: Array.from({ length: n }, (_, i) => s.values[i] ?? null) })), ...f };
+}
+
+/** is a picture mostly dark? (decides the text colour on a slide that has it as background; a failure just says "light") */
+export async function isDarkImage(src: string): Promise<boolean> {
+  try {
+    if (typeof document === 'undefined') return false;
+    const img = new Image(); img.src = src; await img.decode();
+    const c = document.createElement('canvas'); c.width = c.height = 8;
+    const x = c.getContext('2d'); if (!x) return false;
+    x.drawImage(img, 0, 0, 8, 8);
+    const d = x.getImageData(0, 0, 8, 8).data; let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return sum / 64 < 128;
+  } catch { return false; }
 }
 
 export interface ImportedDeck { deck: Deck; warnings: string[] }
@@ -255,10 +269,21 @@ export async function importPptx(bytes: Uint8Array): Promise<ImportedDeck> {
     for (const owner of [slide, layout, master]) {
       const bg = kid(owner?.el, 'cSld', 'bg');
       if (!bg) continue;
-      const fill = kid(bg, 'bgPr', 'solidFill');
+      const pr = kid(bg, 'bgPr');
+      const fill = kid(pr, 'solidFill');
       const ref = kid(bg, 'bgRef');
-      out.bg = fill ? colorIn(fill, ctx) : ref ? colorIn(ref, ctx) : undefined;
-      if (out.bg || kid(bg, 'bgPr')) break;
+      const grad = kid(pr, 'gradFill');
+      const pic = kid(pr, 'blipFill');
+      if (grad) {
+        const stops = kids(kid(grad, 'gsLst'), 'gs').map((g) => colorIn(g, ctx)).filter((c): c is string => !!c);
+        if (stops.length) out.bgGrad = { from: stops[0], to: stops[stops.length - 1], angle: Math.round((Number(kid(grad, 'lin')?.getAttribute('ang') ?? 5400000) / 60000 + 90) % 360) };
+        if (stops.length > 2) warnings.add('Gradients with more than two colours are shown with the first and the last.');
+      } else if (pic && owner) {
+        const blip = desc(pic, 'blip')[0];
+        const src = blip ? await imageOf(owner, blip) : null;
+        if (src) { out.bgImage = src; out.bgDark = await isDarkImage(src); }
+      } else out.bg = fill ? colorIn(fill, ctx) : ref ? colorIn(ref, ctx) : undefined;
+      if (out.bg || out.bgGrad || out.bgImage || pr) break;
     }
     if (kid(slide.el, 'timing')) warnings.add('Animations.');
     const tr = kid(slide.el, 'transition') ?? kid(kid(slide.el, 'AlternateContent'), 'Choice', 'transition') ?? desc(slide.el, 'transition')[0];
@@ -411,14 +436,14 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
   for (const s of deck.slides) {
     slideNo++;
     const slide = pres.addSlide();
-    if (s.bg) slide.background = { color: hexOf(s.bg)! };
+    if (s.bgImage) slide.background = { data: s.bgImage.replace(/^data:/, '') }; else if (s.bg && !s.bgGrad) slide.background = { color: hexOf(s.bg)! };
     for (const e of s.els) {
       const pos = { x: inch(e.x), y: inch(e.y), w: inch(e.w), h: inch(e.h) };
       const rotate = e.rot ? { rotate: e.rot } : {};
       if (e.kind === 'image') { slide.addImage({ data: e.src.replace(/^data:/, ''), ...pos, ...rotate, altText: e.alt ?? undefined }); crops.push({ slide: slideNo, crop: e.crop }); continue; }
       if (e.kind === 'chart') {
         const colors = ['4E79A7', 'F28E2B', 'E15759', '76B7B2', '59A14F', 'EDC948', 'B07AA1', 'FF9DA7'];
-        const ink = defaultTextColor(s.bg) === '#ffffff' ? 'FFFFFF' : '000000';
+        const ink = slideInk(s) === '#ffffff' ? 'FFFFFF' : '000000';
         const data = (e.type === 'pie' ? e.series.slice(0, 1) : e.series).map((x) => ({ name: x.name, labels: e.cats, values: x.values.map((v) => v ?? 0) }));
         const kind = e.type === 'pie' ? pres.ChartType.pie : e.type === 'line' ? pres.ChartType.line : e.type === 'area' ? pres.ChartType.area : pres.ChartType.bar;
         slide.addChart(kind, data as never, { ...pos, ...rotate, ...(e.type === 'bar' ? { barDir: 'bar' } : e.type === 'column' ? { barDir: 'col' } : {}), chartColors: e.type === 'pie' ? e.cats.map((_, i) => colors[i % colors.length]) : colors.slice(0, data.length), showLegend: e.type === 'pie' || data.length > 1, legendPos: 'b', legendColor: ink, showTitle: !!e.title, title: e.title, titleColor: ink, titleFontSize: 16, catAxisLabelColor: ink, valAxisLabelColor: ink, valGridLine: { color: ink === 'FFFFFF' ? '555555' : 'D9D9D9', size: 0.5 }, dataLabelColor: ink, ...(e.type === 'pie' ? { showPercent: true, showValue: false, dataLabelColor: 'FFFFFF' } : {}) } as never);
@@ -429,7 +454,7 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
         continue;
       }
       if (e.kind === 'table') {
-        const dark = defaultTextColor(s.bg) === '#ffffff';
+        const dark = slideInk(s) === '#ffffff';
         const rows = e.cells.map((row, r) => row.flatMap((c, ci) => {
           if (isCovered(e, r, ci)) return [];
           const mg = mergeOf(e, r, ci);
@@ -448,7 +473,7 @@ export async function exportPptx(deck: Deck): Promise<Uint8Array> {
         return runs.map((r, ri) => ({
           text: r.text.replace(/\n/g, ''),
           options: {
-            bold: r.b, italic: r.i, underline: r.u ? { style: 'sng' as const } : undefined, color: hexOf(r.color ?? defaultTextColor(s.bg)), fontSize: r.size ?? DEFAULT_SIZE, fontFace: r.font ?? deck.font,
+            bold: r.b, italic: r.i, underline: r.u ? { style: 'sng' as const } : undefined, color: hexOf(r.color ?? slideInk(s)), fontSize: r.size ?? DEFAULT_SIZE, fontFace: r.font ?? deck.font,
             ...(ri === 0 ? { align: p.align ?? 'left', ...(p.bullet ? { bullet: true, indentLevel: p.level ?? 0 } : p.num ? { bullet: { type: 'number' as const }, indentLevel: p.level ?? 0 } : {}), ...(p.lh ? { lineSpacingMultiple: p.lh } : {}) } : {}),
             ...(ri === runs.length - 1 && pi < e.paras.length - 1 ? { breakLine: true } : {}),
           },
@@ -466,7 +491,7 @@ const TRANSITION_XML: Record<Transition, string> = { fade: '<p:fade/>', push: '<
 /** What pptxgenjs cannot write: slide transitions and picture crops, put into the finished slides' XML. */
 async function patchSlides(bytes: Uint8Array, deck: Deck, crops: { slide: number; crop?: Crop }[]): Promise<Uint8Array> {
   const cropped = crops.some((c) => c.crop && (c.crop.l || c.crop.t || c.crop.r || c.crop.b));
-  if (!cropped && !deck.slides.some((s) => s.trans)) return bytes;
+  if (!cropped && !deck.slides.some((s) => s.trans || s.bgGrad)) return bytes;
   const zip = await JSZip.loadAsync(bytes);
   for (const [i, s] of deck.slides.entries()) {
     const path = `ppt/slides/slide${i + 1}.xml`;
@@ -482,6 +507,11 @@ async function patchSlides(bytes: Uint8Array, deck: Deck, crops: { slide: number
         const v = (x: number) => Math.round(x * 100000);
         return pic.replace(/<a:srcRect[^>]*\/>/, '').replace('<a:stretch>', `<a:srcRect l="${v(c.l)}" t="${v(c.t)}" r="${v(c.r)}" b="${v(c.b)}"/><a:stretch>`);
       });
+    }
+    if (s.bgGrad && !s.bgImage) {
+      const hx = (c: string) => c.replace('#', '').toUpperCase();
+      const bg = `<p:bg><p:bgPr><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:srgbClr val="${hx(s.bgGrad.from)}"/></a:gs><a:gs pos="100000"><a:srgbClr val="${hx(s.bgGrad.to)}"/></a:gs></a:gsLst><a:lin ang="${Math.round((((s.bgGrad.angle - 90) % 360) + 360) % 360 * 60000)}" scaled="0"/></a:gradFill><a:effectLst/></p:bgPr></p:bg>`;
+      xml = xml.replace(/<p:bg>[\s\S]*?<\/p:bg>/, '').replace(/(<p:cSld[^>]*>)/, `$1${bg}`);
     }
     if (s.trans) xml = xml.replace(/<\/p:clrMapOvr>/, `</p:clrMapOvr><p:transition spd="med">${TRANSITION_XML[s.trans]}</p:transition>`);
     if (xml !== before) zip.file(path, xml);

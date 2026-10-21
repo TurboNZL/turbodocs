@@ -11,7 +11,7 @@ import { FACTORY_STYLES, importDocx, type DocStyles, type Json } from './docxImp
 import { styleVars } from './docStyles.ts';
 import { Toolbar } from './Toolbar.tsx';
 import { StatusBar } from './StatusBar.tsx';
-import { DocHeader } from './DocHeader.tsx';
+import { DocActions, DocTitle } from './DocHeader.tsx';
 import { useSaver } from './useSaver.ts';
 import { useAutosave } from './useAutosave.ts';
 import { docMenus, STYLE_NAMES } from './docMenus.ts';
@@ -217,8 +217,7 @@ export function DocPane({ initial, path, name, warnings, styles: initialStyles, 
   });
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MenuBar menus={menus} label="Document menu" />
-      <DocHeader name={saver.name} path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />
+      <MenuBar menus={menus} label="Document menu" lead={<DocTitle name={saver.name} path={saver.path} dirty={dirty} />} trail={<DocActions path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />} />
       {autosave.found && (
         <div role="alert" className="tk-expand mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-theme border border-accent bg-accent/10 px-3 py-2 text-sm">
           <span className="flex-1">Unsaved changes from {new Date(autosave.found.at).toLocaleString()} were backed up. Restore them?</span>

@@ -136,7 +136,7 @@ describe('charts', () => {
     const cs = book.sheets[0].charts!;
     expect(cs.map((c) => [c.type, c.title, c.header, c.labels])).toEqual([['column', 'Sales by month', true, true], ['pie', 'Share', true, true], ['line', '', false, false]]);
     expect(cs[0].range).toEqual({ r1: 0, c1: 0, r2: 4, c2: 2 }); expect(cs[2].range).toEqual({ r1: 1, c1: 2, r2: 4, c2: 2 });
-    expect(cs[0].x).toBeGreaterThan(300); expect(cs[0].w).toBeGreaterThan(300);
+    expect(cs[0].x).toBe(256); // column E, 4 x Excel's default 64 px; expect(cs[0].w).toBeGreaterThan(300);
     expect(chartData(book.sheets[0], cs[0]).series.map((s) => s.values)).toEqual([[10, 14, 9, 18], [7, 9, 12, 15]]);
   });
 });
@@ -222,5 +222,38 @@ describe('paint format and paste special', () => {
     const pf = pasteFormats(grid([['keep'], ['me']]), { r: 0, c: 0 }, [[{ v: 'ignored', s: { i: true } }]]);
     expect(pf.cells[key(0, 0)]).toEqual({ v: 'keep', s: { i: true } }); expect(pf.cells[key(1, 0)]).toEqual({ v: 'me' });
     expect(valuesOf([[{ v: 3, f: 'A1+2', s: { b: true } }]])).toEqual([[{ v: 3 }]]);
+  });
+});
+
+import JSZip from 'jszip';
+import { colLeft, colWidth, rowHeight, rowTop } from '../src/sheets/model.ts';
+describe('column widths and row heights come through from other programs', () => {
+  const google = `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetFormatPr customHeight="1" defaultColWidth="12.63" defaultRowHeight="15.75"/><cols><col customWidth="1" min="1" max="1" width="20.0"/><col customWidth="1" min="2" max="4" width="8.5"/></cols><sheetData><row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr"><is><t>tall</t></is></c></row><row r="2" ht="15.75" customHeight="1"><c r="A2"><v>1</v></c></row><row r="3" ht="42"><c r="A3"><v>2</v></c></row></sheetData></worksheet>`;
+  const xlsxOf = async (sheetXml: string) => {
+    const z = new JSZip();
+    z.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
+    z.file('xl/workbook.xml', '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>');
+    z.file('xl/_rels/workbook.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="x/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+    z.file('xl/worksheets/sheet1.xml', sheetXml);
+    return await z.generateAsync({ type: 'uint8array' });
+  };
+  it("keep a Google Sheets file's own default sizes, widths and heights (width x 7 px, points x 4/3)", async () => {
+    const s = (await importXlsx(await xlsxOf(google))).book.sheets[0];
+    expect([s.defColW, s.defRowH]).toEqual([88, 21]);
+    expect([colWidth(s, 0), colWidth(s, 1), colWidth(s, 3), colWidth(s, 4)]).toEqual([140, 60, 60, 88]);
+    expect([rowHeight(s, 0), rowHeight(s, 1), rowHeight(s, 2), rowHeight(s, 3)]).toEqual([40, 21, 56, 21]); // a height without customHeight (grown to fit text) is kept too
+    expect([colLeft(s, 2), rowTop(s, 3)]).toEqual([200, 117]);
+  });
+  it('save them back as they were', async () => {
+    const first = (await importXlsx(await xlsxOf(google))).book;
+    const again = (await importXlsx(await exportXlsx(first))).book.sheets[0];
+    expect([again.defColW, again.defRowH]).toEqual([88, 21]);
+    expect([0, 1, 2, 4].map((c) => colWidth(again, c))).toEqual([140, 60, 60, 88]);
+    expect([0, 1, 2, 3].map((r) => rowHeight(again, r))).toEqual([40, 21, 56, 21]);
+  });
+  it('use Excel\'s defaults when the file names none, and Google\'s for a new sheet', async () => {
+    const s = (await importXlsx(await xlsxOf('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>'))).book.sheets[0];
+    expect([s.defColW, s.defRowH]).toEqual([64, 20]);
+    expect([colWidth(emptySheet('N'), 0), rowHeight(emptySheet('N'), 0)]).toEqual([100, 21]);
   });
 });

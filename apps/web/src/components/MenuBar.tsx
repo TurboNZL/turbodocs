@@ -30,7 +30,7 @@ export function Items({ items, close }: { items: MenuItem[]; close: () => void }
  * A menu bar (File, Edit, ...) like the first TurboDocs'. Opens on click, then follows the pointer from one title to the next; Escape or a click outside
  * closes it. Menus are plain data, so each app (Docs, Sheets, Slides) builds its own.
  */
-export function MenuBar({ menus, label = 'Menu' }: { menus: MenuDef[]; label?: string }) {
+export function MenuBar({ menus, label = 'Menu', lead, trail }: { menus: MenuDef[]; label?: string; lead?: React.ReactNode; trail?: React.ReactNode }) {
   const [open, setOpen] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -41,13 +41,18 @@ export function MenuBar({ menus, label = 'Menu' }: { menus: MenuDef[]; label?: s
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
   }, [open]);
   return (
-    <div ref={box} role="menubar" aria-label={label} className="bt-top flex items-center gap-px px-2 py-0.5 text-sm">
+    <div className="bt-top flex flex-wrap items-center gap-x-1 px-2 py-0.5 text-sm">
+    {lead}
+    <div ref={box} role="menubar" aria-label={label} className="flex items-center gap-px">
       {menus.map((m, i) => (
         <div key={m.label} className="relative" onMouseEnter={() => { if (open !== null) setOpen(i); }}>
           <button type="button" className={`btn btn-ghost !px-2.5 !py-0.5 ${open === i ? 'tb-on' : ''}`} aria-haspopup="menu" aria-expanded={open === i} onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(open === i ? null : i)}>{m.label}</button>
           {open === i && <div role="menu" aria-label={m.label} className="bt-menu tk-pop absolute left-0 top-full z-40 mt-0.5 min-w-[14rem] p-1.5" onMouseDown={(e) => e.preventDefault()}><Items items={m.items} close={() => setOpen(null)} /></div>}
         </div>
       ))}
+    </div>
+    <span className="flex-1" />
+    {trail}
     </div>
   );
 }

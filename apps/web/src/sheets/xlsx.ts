@@ -3,7 +3,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { builtinFormat } from './format.ts';
 import { buildChartParts, readCharts } from './xlsxCharts.ts';
 import { hiddenRows } from './rules.ts';
-import { colIndex, colName, emptySheet, key, parseAddr, parseRange, rangeText, unkey, type Borders, type Cell, type CellFmt, type CfRule, type Edge, type Range, type Sheet, type Validation, type Workbook } from './model.ts';
+import { colIndex, colName, DEFAULT_COL_W, DEFAULT_ROW_H, emptySheet, key, parseAddr, parseRange, rangeText, unkey, type Borders, type Cell, type CellFmt, type CfRule, type Edge, type Range, type Sheet, type Validation, type Workbook } from './model.ts';
 
 /**
  * .xlsx <-> Workbook. Reading goes straight to the file's XML: values, formulas (kept, with the value the file last had), text, numbers, booleans, errors, dates,
@@ -25,7 +25,8 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const clean = (s: string) => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '');
 
 const rgb = (c: El | undefined): string | undefined => { const v = attr(c, 'rgb'); return v && /^[0-9a-f]{8}$/i.test(v) ? `#${v.slice(2).toLowerCase()}` : undefined; };
-const px = (chars: number) => Math.round(chars * 7 + 5);
+/** a column width in the file is in characters of the default font's digit (7 px wide), padding included: px = width x 7 (Excel's rule, as Google Sheets' export follows it) */
+const px = (chars: number) => Math.max(1, Math.round(chars * 7));
 
 export interface ImportedBook { book: Workbook; warnings: string[] }
 
@@ -101,15 +102,21 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
     if (!xml) continue;
     let hiddenSeen = false;
     const ws = parse(xml).documentElement;
+    // the sheet's own default sizes: without them every column and row would come out at the app's, not the file's
+    const fp = kid(ws, 'sheetFormatPr');
+    const dcw = Number(fp?.getAttribute('defaultColWidth')), base = Number(fp?.getAttribute('baseColWidth') ?? 8), drh = Number(fp?.getAttribute('defaultRowHeight'));
+    sheet.defColW = dcw > 0 ? px(dcw) : Math.round(base * 8) ; // no default given: Excel's 64 px (baseColWidth 8)
+    sheet.defRowH = drh > 0 ? Math.round(drh / 0.75) : 20;
     for (const c of kids(kid(ws, 'cols'), 'col')) {
-      const w = Number(c.getAttribute('width')); const lo = Number(c.getAttribute('min')) - 1, hi = Math.min(Number(c.getAttribute('max')) - 1, lo + 200);
+      const w = Number(c.getAttribute('width')); const lo = Number(c.getAttribute('min')) - 1, hi = Math.min(Number(c.getAttribute('max')) - 1, lo + 2000);
       if (w > 0 && !['1', 'true'].includes(c.getAttribute('hidden') ?? '')) for (let k = lo; k <= hi; k++) sheet.colW[k] = px(w);
     }
     for (const r of kids(kid(ws, 'sheetData'), 'row')) {
       const ri = Number(r.getAttribute('r')) - 1;
       if (['1', 'true'].includes(r.getAttribute('hidden') ?? '')) hiddenSeen = true;
       const ht = Number(r.getAttribute('ht'));
-      if (ht > 0 && ['1', 'true'].includes(r.getAttribute('customHeight') ?? '')) sheet.rowH[ri] = Math.round(ht / 0.75);
+      // a height the file gives (set by hand, or grown to fit wrapped text) is kept; one equal to the default needs no entry
+      if (ht > 0 && Math.round(ht / 0.75) !== sheet.defRowH) sheet.rowH[ri] = Math.round(ht / 0.75);
       let next = 0;
       for (const c of kids(r, 'c')) {
         const a = parseAddr(c.getAttribute('r') ?? '');
@@ -314,10 +321,10 @@ export async function exportXlsx(book: Workbook): Promise<Uint8Array> {
       }).join('');
       return `<row r="${r + 1}"${ht ? ` ht="${(ht * 0.75).toFixed(2)}" customHeight="1"` : ''}${hidden.has(r) ? ' hidden="1"' : ''}>${cs}</row>`;
     }).join('');
-    const cols = Object.entries(sh.colW).sort((a, b) => Number(a[0]) - Number(b[0])).map(([c, w]) => `<col min="${Number(c) + 1}" max="${Number(c) + 1}" width="${Math.max(1, (w - 5) / 7).toFixed(2)}" customWidth="1"/>`).join('');
+    const cols = Object.entries(sh.colW).sort((a, b) => Number(a[0]) - Number(b[0])).map(([c, w]) => `<col min="${Number(c) + 1}" max="${Number(c) + 1}" width="${Math.max(1, w / 7).toFixed(4)}" customWidth="1"/>`).join('');
     const merges = sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map((m) => `<mergeCell ref="${rangeText(m)}"/>`).join('')}</mergeCells>` : '';
     if (drawing || links.length) sheetRels.set(index, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${drawing ? `<Relationship Id="rId1" Type="${NS.rel}/drawing" Target="${drawing}"/>` : ''}${links.map((u, k) => `<Relationship Id="rId${k + 2}" Type="${NS.rel}/hyperlink" Target="${esc(u)}" TargetMode="External"/>`).join('')}</Relationships>`);
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS.main}" xmlns:r="${NS.rel}"><sheetViews><sheetView workbookViewId="0"${selected ? ' tabSelected="1"' : ''}>${paneXml(sh)}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData>${rx.filter}${merges}${rx.cf}${rx.dv}${rx.hl}${drawing ? '<drawing r:id="rId1"/>' : ''}</worksheet>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS.main}" xmlns:r="${NS.rel}"><sheetViews><sheetView workbookViewId="0"${selected ? ' tabSelected="1"' : ''}>${paneXml(sh)}</sheetView></sheetViews><sheetFormatPr defaultColWidth="${+((sh.defColW ?? DEFAULT_COL_W) / 7).toFixed(4)}" defaultRowHeight="${+(((sh.defRowH ?? DEFAULT_ROW_H) * 0.75)).toFixed(2)}" customHeight="1"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData>${rx.filter}${merges}${rx.cf}${rx.dv}${rx.hl}${drawing ? '<drawing r:id="rId1"/>' : ''}</worksheet>`;
   };
 
   const zip = new JSZip();

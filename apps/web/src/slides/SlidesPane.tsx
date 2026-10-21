@@ -12,9 +12,13 @@ import { MenuBar, type MenuDef, type MenuItem } from '../components/MenuBar.tsx'
 import { Dialog } from '../components/Dialog.tsx';
 import { ContextMenu } from '../components/ContextMenu.tsx';
 import { FontBox } from '../components/FontBox.tsx';
+import { Select } from '../components/Select.tsx';
+import { OverflowBar } from '../components/OverflowBar.tsx';
+import { BackgroundDialog, type Backdrop } from './BackgroundDialog.tsx';
+import { SizeBox } from '../components/SizeBox.tsx';
 import { Btn, Sep, SplitColour } from '../editor/Toolbar.tsx';
 import { StatusBar } from '../editor/StatusBar.tsx';
-import { DocHeader } from '../editor/DocHeader.tsx';
+import { DocActions, DocTitle } from '../editor/DocHeader.tsx';
 import { useSaver } from '../editor/useSaver.ts';
 import { useAutosave } from '../editor/useAutosave.ts';
 import { SIZES } from '../editor/fonts.ts';
@@ -56,6 +60,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const [picker, setPicker] = useState<'new' | 'apply' | null>(null);
   const [tableDlg, setTableDlg] = useState<{ rows: number; cols: number } | null>(null);
   const [ctx, setCtx] = useState<{ at: { x: number; y: number }; kind: 'object' | 'canvas' | 'slide' | 'items'; items?: MenuItem[] } | null>(null);
+  const [bgDlg, setBgDlg] = useState(false);
   const [cropDlg, setCropDlg] = useState<{ l: string; t: string; r: string; b: string } | null>(null);
   const [chartDlg, setChartDlg] = useState<{ id?: string; type: SlideChartType; title: string; data: string; error?: string } | null>(null);
   const [recent, setRecent] = useState<{ path: string; name: string }[]>([]);
@@ -115,7 +120,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const resizeDeck = (w: number, hh: number) => commit((d) => ({ ...d, w, h: hh, slides: d.slides.map((s) => ({ ...s, els: s.els.map((e) => ({ ...e, x: (e.x * w) / d.w, y: (e.y * hh) / d.h, w: (e.w * w) / d.w, h: (e.h * hh) / d.h })) })) }));
   const applyDesign = (g: (typeof DESIGNS)[number]) => commit((d) => ({
     ...d, font: g.font,
-    slides: d.slides.map((s) => ({ ...s, bg: g.bg ?? undefined, els: s.els.map((e) => (e.kind === 'text' && e.role === 'title' ? { ...e, paras: e.paras.map((p) => ({ ...p, runs: p.runs.map((r) => ({ ...r, color: g.title })) })) } : e)) })),
+    slides: d.slides.map((s) => ({ ...s, bg: g.bg ?? undefined, bgGrad: undefined, bgImage: undefined, bgDark: undefined, els: s.els.map((e) => (e.kind === 'text' && e.role === 'title' ? { ...e, paras: e.paras.map((p) => ({ ...p, runs: p.runs.map((r) => ({ ...r, color: g.title })) })) } : e)) })),
   }));
 
   // ---- elements
@@ -189,6 +194,10 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
     setChartDlg(null);
   };
   const TRANSITIONS: [Transition | undefined, string][] = [[undefined, 'None'], ['fade', 'Fade'], ['push', 'Push'], ['wipe', 'Wipe'], ['zoom', 'Zoom']];
+  const applyBackdrop = (b: Backdrop, all: boolean) => {
+    const set = (sl: Slide): Slide => { const o: Slide = { ...sl }; delete o.bg; delete o.bgGrad; delete o.bgImage; delete o.bgDark; return { ...o, ...(b.bg ? { bg: b.bg } : {}), ...(b.bgGrad ? { bgGrad: b.bgGrad } : {}), ...(b.bgImage ? { bgImage: b.bgImage, bgDark: b.bgDark } : {}) }; };
+    commit((d) => ({ ...d, slides: d.slides.map((sl, i) => (all || i === idx ? set(sl) : sl)) })); setBgDlg(false);
+  };
   const setTrans = (t: Transition | undefined, all = false) => commit((d) => ({ ...d, slides: d.slides.map((x, i) => (all || i === idx ? (() => { const o = { ...x }; if (t) o.trans = t; else delete o.trans; return o; })() : x)) }));
 
   /** one step forward (+1) or backward (-1) in the stacking order */
@@ -349,7 +358,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
   const slideItems: MenuItem[] = [
     { label: 'New slide', keys: 'Ctrl+M', run: () => addLayout(layoutById('content')) }, { label: 'Duplicate slide', run: dupSlide }, { label: 'Delete slide', run: delSlide }, sep,
     { label: 'Move slide', sub: [{ label: 'Move slide up', disabled: idx === 0, run: () => moveSlide(idx, idx - 1) }, { label: 'Move slide down', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, idx + 1) }, { label: 'Move slide to beginning', disabled: idx === 0, run: () => moveSlide(idx, 0) }, { label: 'Move slide to end', disabled: idx === deck.slides.length - 1, run: () => moveSlide(idx, deck.slides.length - 1) }] }, sep,
-    { label: 'Change background', sub: [...BG.map(([l, c]): MenuItem => ({ label: l, check: (slide.bg ?? null) === c, run: () => editSlide((s0) => ({ ...s0, bg: c ?? undefined })) })), sep, { label: 'Use on every slide', run: () => commit((d) => ({ ...d, slides: d.slides.map((s0) => ({ ...s0, bg: slide.bg })) })) }] },
+    { label: 'Change background…', run: () => setBgDlg(true) },
     { label: 'Apply layout', sub: [...layoutItems, sep, { label: 'More layouts…', run: () => setPicker('apply') }] },
     { label: 'Change theme', sub: DESIGNS.map((g) => ({ label: g.name, run: () => applyDesign(g) })) },
     { label: 'Transition', sub: [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply to all slides', run: () => setTrans(slide.trans, true) }] },
@@ -419,14 +428,13 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
     if (c.cell) setCell_(c.cell);
     setCtx({ at: { x: c.x, y: c.y }, kind: c.id ? 'object' : 'canvas' });
   };
-  const canvasItems = (): MenuItem[] => [{ label: 'Paste', keys: 'Ctrl+V', disabled: !clip.current.length, run: () => paste() }, { label: 'Select all', keys: 'Ctrl+A', run: () => setSelected(slide.els.map((x) => x.id)) }, sep, { label: 'Apply layout', sub: layoutItems }, { label: 'Change background', sub: BG.map(([l, col]): MenuItem => ({ label: l, check: (slide.bg ?? null) === col, run: () => editSlide((s0) => ({ ...s0, bg: col ?? undefined })) })) }, { label: 'Transition', sub: TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })) }];
+  const canvasItems = (): MenuItem[] => [{ label: 'Paste', keys: 'Ctrl+V', disabled: !clip.current.length, run: () => paste() }, { label: 'Select all', keys: 'Ctrl+A', run: () => setSelected(slide.els.map((x) => x.id)) }, sep, { label: 'Apply layout', sub: layoutItems }, { label: 'Change background…', run: () => setBgDlg(true) }, { label: 'Transition', sub: TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })) }];
   const ctxItems = (): MenuItem[] => (!ctx ? [] : ctx.kind === 'object' ? objectItems() : ctx.kind === 'canvas' ? canvasItems() : ctx.kind === 'slide' ? slideItems : ctx.items ?? []);
 
   const thumbScale = 138 / deck.w;
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MenuBar menus={menus} label="Presentation menu" />
-      <DocHeader name={saver.name} path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />
+      <MenuBar menus={menus} label="Presentation menu" lead={<DocTitle name={saver.name} path={saver.path} dirty={dirty} />} trail={<DocActions path={saver.path} dirty={dirty} busy={saver.busy} onSave={() => void doSave()} onSaveAs={() => void doSave(true)} />} />
       {autosave.found && (
         <div role="alert" className="tk-expand mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-theme border border-accent bg-accent/10 px-3 py-2 text-sm">
           <span className="flex-1">Unsaved changes from {new Date(autosave.found.at).toLocaleString()} were backed up. Restore them?</span>
@@ -438,55 +446,54 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
           <b>Parts of this presentation cannot be edited here:</b> {warnings.join(' ')} <span className="text-muted">Saving writes a new file without them (a copy of the original is kept); use Save as to keep the original untouched.</span>
         </div>
       )}
-      <div role="toolbar" aria-label="Formatting" className="tb-bar bt-top flex flex-wrap items-center gap-px px-2 py-1">
-        <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
-        <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
-        <Sep />
-        <Btn label="New slide (Ctrl+M)" onClick={() => addLayout(layoutById('content'))}><Plus size={16} /></Btn>
-        <Btn label="Choose a layout for the new slide" onClick={() => setPicker('new')}><LayoutTemplate size={16} /></Btn>
-        <Sep />
-        <Btn label="Text box" onClick={addText}><Type size={16} /></Btn>
-        <Btn label="Image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
-        <select aria-label="Shape" className="input !w-14 !px-1 !py-1 text-sm" value="" title="Shape" onChange={(e) => { if (e.target.value) addShape(e.target.value as Geometry); e.target.value = ''; }}>
-          <option value="">▢</option>{SHAPES.map((g) => <option key={g} value={g}>{GEOMETRY_LABELS[g]}</option>)}
-        </select>
-        <Btn label="Line" onClick={() => addLine(false)}><Minus size={16} /></Btn>
-        <Btn label="Arrow" onClick={() => addLine(true)}><MoveRight size={16} /></Btn>
-        <Btn label="Table" onClick={() => setTableDlg({ rows: 3, cols: 3 })}><Table2 size={16} /></Btn>
-        <Btn label="Chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>
-        <Sep />
-        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Background" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, (slideItems.find((i) => 'label' in i && i.label === 'Change background') as { sub: MenuItem[] }).sub)}>Background</button>
-        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Layout" onMouseDown={(e) => e.preventDefault()} onClick={() => setPicker('apply')}>Layout</button>
-        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Theme" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, DESIGNS.map((g): MenuItem => ({ label: g.name, run: () => applyDesign(g) })))}>Theme</button>
-        <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Transition" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply to all slides', run: () => setTrans(slide.trans, true) }])}>Transition</button>
-        <Sep />
-        <FontBox value={fontNow} onPick={(f) => formatRuns({ font: f })} />
-        <Btn label="Decrease font size" disabled={!canText} onClick={() => stepSize(-2)}><span className="text-base leading-none">−</span></Btn>
-        <input aria-label="Font size" list="slide-font-sizes" className="input !w-12 !px-1 !py-1 text-center text-sm" inputMode="decimal" key={`${selected.join()}-${sizeNow}`} defaultValue={String(sizeNow)} disabled={!canText}
-          onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onBlur={(e) => { const n = Number(e.target.value.replace(',', '.')); if (n >= 1 && n <= 400 && n !== sizeNow) formatRuns({ size: n }); }} />
-        <Btn label="Increase font size" disabled={!canText} onClick={() => stepSize(2)}><span className="text-base leading-none">+</span></Btn>
-        <datalist id="slide-font-sizes">{[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 44, 54, 66, 80, ...SIZES.filter((s0) => s0 > 80)].map((z) => <option key={z} value={z} />)}</datalist>
-        <Sep />
-        <Btn label="Bold (Ctrl+B)" active={flag('b')} disabled={!canText} onClick={() => toggle('b')}><Bold size={16} /></Btn>
-        <Btn label="Italic (Ctrl+I)" active={flag('i')} disabled={!canText} onClick={() => toggle('i')}><Italic size={16} /></Btn>
-        <Btn label="Underline (Ctrl+U)" active={flag('u')} disabled={!canText || !!table} onClick={() => toggle('u')}><Underline size={16} /></Btn>
-        <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => formatRuns({ color: c })} onPick={(c) => { setTextColour(c); formatRuns({ color: c }); }} />
-        <Sep />
-        <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => setFill(c)} onPick={(c) => { setFillColour(c); setFill(c); }} />
-        <Btn label="Transparent (no fill)" disabled={textEls.length === 0 || !textEls.some((e) => e.fill)} onClick={() => setFill(undefined)}><span className="text-xs">None</span></Btn>
-        <SplitColour label="Border colour" icon={<Palette size={15} />} last={lineColour} onApply={(c) => setOutline(c)} onPick={(c) => { setLineColour(c); setOutline(c); }} />
-        <select aria-label="Border weight" className="input !w-16 !px-1 !py-1 text-sm" disabled={!sels.some((e) => e.kind === 'text' || e.kind === 'line')} value={String(weightNow)} onChange={(e) => setWeight(Number(e.target.value))}>
-          {[...new Set([1, 2, 3, 4, 6, 8, weightNow])].sort((a0, b0) => a0 - b0).map((w) => <option key={w} value={w}>{Math.round(w * 10) / 10} px</option>)}
-        </select>
-        <Sep />
-        <Btn label="Align left (Ctrl+Shift+L)" disabled={!canText} onClick={() => setAlign('left')}><AlignLeft size={16} /></Btn>
-        <Btn label="Align center (Ctrl+Shift+E)" disabled={!canText} onClick={() => setAlign('center')}><AlignCenter size={16} /></Btn>
-        <Btn label="Align right (Ctrl+Shift+R)" disabled={!canText} onClick={() => setAlign('right')}><AlignRight size={16} /></Btn>
-        <Btn label="Bulleted list (Ctrl+Shift+8)" disabled={textEls.length === 0} onClick={() => toggleList('bullet')}><List size={16} /></Btn>
-        <Btn label="Numbered list (Ctrl+Shift+7)" disabled={textEls.length === 0} onClick={() => toggleList('num')}><ListOrdered size={16} /></Btn>
-        <span className="flex-1" />
-        <button type="button" className="btn btn-accent inline-flex items-center gap-1.5 text-sm" onClick={() => setPresent(idx)} title="Slideshow (Ctrl+F5)"><Play size={14} />Slideshow</button>
-      </div>
+      <OverflowBar label="Formatting" groups={[
+        <>
+          <Btn label="Undo (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}><Undo2 size={16} /></Btn>
+          <Btn label="Redo (Ctrl+Y)" onClick={h.redo} disabled={!h.canRedo}><Redo2 size={16} /></Btn>
+          <Btn label="New slide (Ctrl+M)" onClick={() => addLayout(layoutById('content'))}><Plus size={16} /></Btn>
+          <Btn label="Choose a layout for the new slide" onClick={() => setPicker('new')}><LayoutTemplate size={16} /></Btn>
+        </>,
+        <>
+          <Btn label="Text box" onClick={addText}><Type size={16} /></Btn>
+          <Btn label="Image" onClick={() => fileInput.current?.click()}><ImageIcon size={16} /></Btn>
+          <Select label="Shape" className="!w-14 !px-1 !py-1" display="▢" options={SHAPES.map((g) => ({ value: g as string, label: GEOMETRY_LABELS[g] }))} onChange={(v) => addShape(v as Geometry)} />
+          <Btn label="Line" onClick={() => addLine(false)}><Minus size={16} /></Btn>
+          <Btn label="Arrow" onClick={() => addLine(true)}><MoveRight size={16} /></Btn>
+        </>,
+        <>
+          <FontBox value={fontNow} onPick={(f) => formatRuns({ font: f })} />
+          <Btn label="Decrease font size" disabled={!canText} onClick={() => stepSize(-2)}><span className="text-base leading-none">−</span></Btn>
+          <SizeBox value={sizeNow} disabled={!canText} sizes={[8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 44, 54, 66, 80, 96, 120]} onCommit={(t) => { const n = Number(t.replace(',', '.')); if (n >= 1 && n <= 400 && n !== sizeNow) formatRuns({ size: n }); }} />
+          <Btn label="Increase font size" disabled={!canText} onClick={() => stepSize(2)}><span className="text-base leading-none">+</span></Btn>
+        </>,
+        <>
+          <Btn label="Bold (Ctrl+B)" active={flag('b')} disabled={!canText} onClick={() => toggle('b')}><Bold size={16} /></Btn>
+          <Btn label="Italic (Ctrl+I)" active={flag('i')} disabled={!canText} onClick={() => toggle('i')}><Italic size={16} /></Btn>
+          <Btn label="Underline (Ctrl+U)" active={flag('u')} disabled={!canText || !!table} onClick={() => toggle('u')}><Underline size={16} /></Btn>
+          <SplitColour label="Text colour" icon={<Baseline size={15} />} last={textColour} onApply={(c) => formatRuns({ color: c })} onPick={(c) => { setTextColour(c); formatRuns({ color: c }); }} />
+        </>,
+        <>
+          <Btn label="Align left (Ctrl+Shift+L)" disabled={!canText} onClick={() => setAlign('left')}><AlignLeft size={16} /></Btn>
+          <Btn label="Align center (Ctrl+Shift+E)" disabled={!canText} onClick={() => setAlign('center')}><AlignCenter size={16} /></Btn>
+          <Btn label="Align right (Ctrl+Shift+R)" disabled={!canText} onClick={() => setAlign('right')}><AlignRight size={16} /></Btn>
+          <Btn label="Bulleted list (Ctrl+Shift+8)" disabled={textEls.length === 0} onClick={() => toggleList('bullet')}><List size={16} /></Btn>
+          <Btn label="Numbered list (Ctrl+Shift+7)" disabled={textEls.length === 0} onClick={() => toggleList('num')}><ListOrdered size={16} /></Btn>
+        </>,
+        <>
+          <SplitColour label="Fill colour" icon={<PaintBucket size={15} />} last={fillColour} onApply={(c) => setFill(c)} onPick={(c) => { setFillColour(c); setFill(c); }} />
+          <Btn label="Transparent (no fill)" disabled={textEls.length === 0 || !textEls.some((e) => e.fill)} onClick={() => setFill(undefined)}><span className="text-xs">None</span></Btn>
+          <SplitColour label="Border colour" icon={<Palette size={15} />} last={lineColour} onApply={(c) => setOutline(c)} onPick={(c) => { setLineColour(c); setOutline(c); }} />
+          <Select label="Border weight" className="!w-[4.5rem] !px-1 !py-1" disabled={!sels.some((e) => e.kind === 'text' || e.kind === 'line')} value={weightNow} options={[...new Set([1, 2, 3, 4, 6, 8, weightNow])].sort((a0, b0) => a0 - b0).map((w) => ({ value: w, label: `${Math.round(w * 10) / 10} px` }))} onChange={(v) => setWeight(v)} />
+        </>,
+        <>
+          <Btn label="Table" onClick={() => setTableDlg({ rows: 3, cols: 3 })}><Table2 size={16} /></Btn>
+          <Btn label="Chart" onClick={() => openChartDlg()}><BarChart3 size={16} /></Btn>
+          <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Background" onMouseDown={(e) => e.preventDefault()} onClick={() => setBgDlg(true)}>Background</button>
+          <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Layout" onMouseDown={(e) => e.preventDefault()} onClick={() => setPicker('apply')}>Layout</button>
+          <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Theme" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, DESIGNS.map((g): MenuItem => ({ label: g.name, run: () => applyDesign(g) })))}>Theme</button>
+          <button type="button" className="btn btn-ghost tb-btn text-xs" aria-label="Transition" onMouseDown={(e) => e.preventDefault()} onClick={(e) => popFrom(e, [...TRANSITIONS.map(([t, l]): MenuItem => ({ label: l, check: slide.trans === t, run: () => setTrans(t) })), sep, { label: 'Apply to all slides', run: () => setTrans(slide.trans, true) }])}>Transition</button>
+        </>,
+      ]} pinned={<button type="button" className="btn btn-accent inline-flex items-center gap-1.5 text-sm !py-0.5" onClick={() => setPresent(idx)} title="Slideshow (Ctrl+F5)"><Play size={14} />Slideshow</button>} />
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Slides" className="w-44 shrink-0 space-y-1 overflow-y-auto border-r border-line p-2">
           {deck.slides.map((s, i) => (
@@ -534,6 +541,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
           </div>
         </Dialog>
       )}
+      {bgDlg && <BackgroundDialog slide={slide} deck={deck} onApply={applyBackdrop} onClose={() => setBgDlg(false)} />}
       {ctx && <ContextMenu at={ctx.at} items={ctxItems()} onClose={() => setCtx(null)} />}
       {cropDlg && (
         <Dialog title="Crop picture" onClose={() => setCropDlg(null)} footer={<><button className="btn mr-auto" onClick={() => setCropDlg({ l: '0', t: '0', r: '0', b: '0' })}>Reset</button><button className="btn" onClick={() => setCropDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveCrop}>Crop</button></>}>
@@ -546,7 +554,7 @@ export function SlidesPane({ initial, path, name, warnings, onReset }: { initial
       {chartDlg && (
         <Dialog title={chartDlg.id ? 'Edit chart' : 'Insert chart'} wide onClose={() => setChartDlg(null)} footer={<><button className="btn" onClick={() => setChartDlg(null)}>Cancel</button><button className="btn btn-accent" onClick={saveChart}>{chartDlg.id ? 'Update' : 'Insert'}</button></>}>
           <div className="grid gap-3 text-sm">
-            <div className="flex gap-3"><label className="grid flex-1 gap-1">Chart type<select aria-label="Chart type" className="input" value={chartDlg.type} onChange={(e) => setChartDlg({ ...chartDlg, type: e.target.value as SlideChartType })}>{([['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['area', 'Area'], ['pie', 'Pie']] as const).map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select></label>
+            <div className="flex gap-3"><label className="grid flex-1 gap-1">Chart type<Select label="Chart type" className="w-full" value={chartDlg.type} options={([['column', 'Column'], ['bar', 'Bar'], ['line', 'Line'], ['area', 'Area'], ['pie', 'Pie']] as const).map(([t, l]) => ({ value: t as string, label: l }))} onChange={(v) => setChartDlg({ ...chartDlg, type: v as SlideChartType })} /></label>
               <label className="grid flex-[2] gap-1">Title<input aria-label="Chart title" className="input" value={chartDlg.title} onChange={(e) => setChartDlg({ ...chartDlg, title: e.target.value })} /></label></div>
             <label className="grid gap-1">Numbers (first row: series names; first column: labels; separated by commas, semicolons or tabs, so you can paste from a spreadsheet)
               <textarea aria-label="Chart data" className="input font-mono" rows={8} value={chartDlg.data} onChange={(e) => setChartDlg({ ...chartDlg, data: e.target.value, error: undefined })} /></label>

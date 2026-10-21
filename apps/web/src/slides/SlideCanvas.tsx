@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { bounds, defaultTextColor, type ChartEl, type Deck, type El, type Frame, type ImageEl, type LineEl, type Para, type Slide, type TableEl, type TextEl } from './model.ts';
+import { bounds, defaultTextColor, slideCss, slideInk, type ChartEl, type Deck, type El, type Frame, type ImageEl, type LineEl, type Para, type Slide, type TableEl, type TextEl } from './model.ts';
 import { RichText, fillEditable, readParas } from './rich.tsx';
 import { isSvgShape, shapePath } from './shapes.ts';
 import { cellTint, isCovered, mergeOf } from './tableOps.ts';
@@ -10,10 +10,10 @@ const INSET = { x: 9.6, y: 4.8 };
 
 /** A slide drawn at `scale` (thumbnails, presenting and the editor's canvas share this). Nothing here edits. */
 export function SlideStage({ slide, deck, scale, children, className = '', hints = false }: { slide: Slide; deck: Deck; scale: number; children?: React.ReactNode; className?: string; hints?: boolean }) {
-  const text = defaultTextColor(slide.bg);
+  const text = slideInk(slide);
   return (
     <div className={`slide-stage ${className}`} style={{ width: deck.w * scale, height: deck.h * scale }}>
-      <div className="slide-paper" style={{ width: deck.w, height: deck.h, transform: `scale(${scale})`, background: slide.bg ?? '#ffffff', color: text, fontFamily: fontStack(deck.font) }}>
+      <div className="slide-paper" style={{ width: deck.w, height: deck.h, transform: `scale(${scale})`, background: slideCss(slide), color: text, fontFamily: fontStack(deck.font) }}>
         {slide.els.map((e) => <ElementView key={e.id} el={e} deck={deck} dark={text === '#ffffff'} hints={hints} />)}
         {children}
       </div>
@@ -152,7 +152,7 @@ export function SlideCanvas({ onContext, onEditChart, slide, deck, scale, select
   onCell(c: CellRef | null): void; onEditCell(c: CellRef | null): void; onCommitCell(c: CellRef, text: string, next?: 'right' | 'cancel'): void; editRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   const paper = useRef<HTMLDivElement>(null);
-  const text = defaultTextColor(slide.bg);
+  const text = slideInk(slide);
   const [guides, setGuides] = useState<{ x?: number; y?: number }[]>([]);
   const [marquee, setMarquee] = useState<Frame | null>(null);
   const byId = (id: string) => slide.els.find((e) => e.id === id);

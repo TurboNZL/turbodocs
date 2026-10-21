@@ -9,6 +9,9 @@ Sheets opens, edits and saves `.xlsx` workbooks and `.csv` tables. It covers the
 - Typing `12`, `1,234.5`, `25%`, `TRUE` or `2026-12-25` makes a number, a percentage, a yes/no or a date; anything else is text. Select several cells and the status bar shows their sum, average and count.
 - **Format:** font, size, bold, italic, underline, text and fill colour, strikethrough, horizontal and vertical alignment, wrapping (Format › Wrapping: text runs on over empty cells to its right, or wraps), **borders** (all, outer, inner, one side or none, with a line style and colour chosen beside the button), number format (number, percent, currency, date, time, scientific, text) with the $ and % buttons and more or fewer decimal places, merge cells. **Data:** sort by a column (A to Z or Z to A), optionally leaving a header row. **Insert:** rows and columns, new sheets (double-click a sheet tab to rename it, right-click to delete it).
 
+## Sizes
+Column widths and row heights, and the sheet's own default cell size, are kept as the file has them (a file from Google Sheets or Excel looks the same here and saves back the same). A new sheet starts at Google's 100 × 21 px.
+
 ## Paint format, paste special, sheet tabs
 - **Paint format** (the brush) takes the look of the cell you are on and gives it to the next cells you select. **Edit › Paste special** pastes only the values (Ctrl+Shift+V) or only the formatting (Ctrl+Alt+V) of cells copied in this sheet.
 - **Right-click a sheet tab** to delete, duplicate, rename or move it. **Insert › Sheet** (Shift+F11) adds one; **Insert › Dropdown** makes a pick-list in the selected cells.
