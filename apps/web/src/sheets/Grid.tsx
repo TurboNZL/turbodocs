@@ -141,7 +141,7 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
     if (rowY[r + 1] - rowY[r] === 0) return null;
     const style: React.CSSProperties = {
       left: x, top: y, width: w, height: h, textAlign: align, background: look?.fill ?? s?.fill, color: look?.color ?? s?.color ?? (cell?.link ? '#0563c1' : cell?.err ? 'hsl(var(--bad))' : pending ? 'hsl(var(--muted))' : undefined),
-      fontWeight: look?.bold || s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: [s?.u || cell?.link ? 'underline' : '', s?.st ? 'line-through' : ''].filter(Boolean).join(' ') || undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined,
+      fontWeight: look?.bold || s?.b ? 700 : undefined, fontStyle: s?.i || pending ? 'italic' : undefined, textDecoration: [s?.u || cell?.link ? 'underline' : '', s?.st ? 'line-through' : ''].filter(Boolean).join(' ') || undefined, fontFamily: s?.font ? `"${s.font}", inherit` : undefined, fontSize: s?.size ? `${s.size * (96 / 72)}px` : undefined, lineHeight: s?.size && s.size > 12 ? `${Math.ceil(s.size * (96 / 72) * 1.25)}px` : undefined,
       whiteSpace: s?.wrap ? 'pre-wrap' : 'pre', overflow: 'hidden', textOverflow: s?.wrap ? undefined : 'ellipsis',
       ...(bd ? { borderTop: edgeCss(bd.t), borderLeft: edgeCss(bd.l), borderBottom: edgeCss(bd.b), borderRight: edgeCss(bd.r) } : {}),
       ...(va ? { display: 'flex', flexDirection: 'column', justifyContent: va === 'top' ? 'flex-start' : va === 'middle' ? 'center' : 'flex-end', lineHeight: s?.wrap ? 1.25 : '23px' } : {}),
