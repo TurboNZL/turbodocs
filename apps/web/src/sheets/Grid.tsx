@@ -48,7 +48,7 @@ export const Grid = forwardRef<GridHandle, Props>(function Grid({ sheet, rows, c
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 900, h: 500 });
   const colX = useMemo(() => { const a = [0]; for (let c = 0; c < cols; c++) a.push(a[c] + colWidth(sheet, c)); return a; }, [cols, sheet.colW, sheet.defColW]);
-  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (hidden?.has(r) ? 0 : rowHeight(sheet, r))); return a; }, [rows, sheet.rowH, hidden]);
+  const rowY = useMemo(() => { const a = [0]; for (let r = 0; r < rows; r++) a.push(a[r] + (hidden?.has(r) ? 0 : rowHeight(sheet, r))); return a; }, [rows, sheet.rowH, sheet.defRowH, hidden]);
   const fr = Math.min(sheet.freeze?.rows ?? 0, rows), fc = Math.min(sheet.freeze?.cols ?? 0, cols);
   const find = (arr: number[], v: number) => { let lo = 0, hi = arr.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; };
   useImperativeHandle(ref, () => ({
