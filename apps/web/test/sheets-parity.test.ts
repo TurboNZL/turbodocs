@@ -3,7 +3,7 @@ import { exportXlsx, importXlsx } from '../src/sheets/xlsx.ts';
 import { autofill, formatRange, setBorders, setValue } from '../src/sheets/ops.ts';
 import { changeDecimals, formatCell } from '../src/sheets/format.ts';
 import { findAll, replacedText } from '../src/sheets/find.ts';
-import { colName, emptySheet, key, type Edge, type Sheet, rowHeight } from '../src/sheets/model.ts';
+import { colName, emptySheet, key, type Edge, type Sheet } from '../src/sheets/model.ts';
 
 const grid = (rows: (string | number | null)[][]): Sheet => { let s = emptySheet('S'); rows.forEach((r, i) => r.forEach((v, j) => { if (v !== null) s = setValue(s, i, j, v); })); return s; };
 const line: Edge = { st: 'thin', c: '#000000' };
@@ -255,15 +255,5 @@ describe('column widths and row heights come through from other programs', () =>
     const s = (await importXlsx(await xlsxOf('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>'))).book.sheets[0];
     expect([s.defColW, s.defRowH]).toEqual([64, 20]);
     expect([colWidth(emptySheet('N'), 0), rowHeight(emptySheet('N'), 0)]).toEqual([100, 21]);
-  });
-});
-
-describe('a row without a height is sized by its biggest font', () => {
-  it('Google Finances export: the 40 pt title row is tall, a plain row is the default', async () => {
-    const { book } = await importXlsx(new Uint8Array(readFileSync(join(__dirname, 'fixtures/google-finances.xlsx'))));
-    const s = book.sheets[0];
-    expect(rowHeight(s, 0)).toBeGreaterThanOrEqual(67);
-    expect(rowHeight(s, 2)).toBe(15); // ht="11.25" kept
-    expect(rowHeight(s, 5)).toBe(21);
   });
 });

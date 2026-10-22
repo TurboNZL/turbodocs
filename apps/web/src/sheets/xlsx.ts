@@ -111,14 +111,12 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
       const w = Number(c.getAttribute('width')); const lo = Number(c.getAttribute('min')) - 1, hi = Math.min(Number(c.getAttribute('max')) - 1, lo + 2000);
       if (w > 0 && !['1', 'true'].includes(c.getAttribute('hidden') ?? '')) for (let k = lo; k <= hi; k++) sheet.colW[k] = px(w);
     }
-    const noHt = new Set<number>();
     for (const r of kids(kid(ws, 'sheetData'), 'row')) {
       const ri = Number(r.getAttribute('r')) - 1;
       if (['1', 'true'].includes(r.getAttribute('hidden') ?? '')) hiddenSeen = true;
       const ht = Number(r.getAttribute('ht'));
       // a height the file gives (set by hand, or grown to fit wrapped text) is kept; one equal to the default needs no entry
       if (ht > 0 && Math.round(ht / 0.75) !== sheet.defRowH) sheet.rowH[ri] = Math.round(ht / 0.75);
-      if (!(ht > 0)) noHt.add(ri);
       let next = 0;
       for (const c of kids(r, 'c')) {
         const a = parseAddr(c.getAttribute('r') ?? '');
@@ -140,15 +138,6 @@ export async function importXlsx(bytes: Uint8Array): Promise<ImportedBook> {
       }
     }
     for (const m of kids(kid(ws, 'mergeCells'), 'mergeCell')) { const g = parseRange(m.getAttribute('ref') ?? ''); if (g) sheet.merges.push(g); }
-    // a row without a height is sized by its biggest font (Excel and Google do it when they open the file)
-    for (const [k, cell] of Object.entries(sheet.cells)) {
-      const [row] = k.split(',').map(Number);
-      if (!noHt.has(row) || !cell.s?.size || cell.v === null) continue;
-      const [rr, cc] = [row, Number(k.split(',')[1])];
-      if (sheet.merges.some((m) => m.r1 !== m.r2 && rr >= m.r1 && rr <= m.r2 && cc >= m.c1 && cc <= m.c2)) continue;
-      const h = Math.ceil(cell.s.size * (96 / 72) * 1.25) + 3;
-      if (h > (sheet.rowH[row] ?? sheet.defRowH!)) sheet.rowH[row] = h;
-    }
     const extRels = new Map<string, string>();
     const rx = await text(path.replace(/([^/]+)$/, '_rels/$1.rels'));
     if (rx) for (const r of kids(parse(rx).documentElement, 'Relationship')) if (r.getAttribute('TargetMode') === 'External') extRels.set(r.getAttribute('Id') ?? '', r.getAttribute('Target') ?? '');

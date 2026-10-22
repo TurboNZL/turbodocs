@@ -21,7 +21,7 @@ export function DocTitle({ name, path, dirty }: { name: string; path: string | n
   return (
     <div className="flex min-w-0 max-w-[18rem] items-center gap-1 pr-2">
       <Link to="/" className="btn btn-ghost !px-1.5" aria-label="Back to Home" title="Back to Home" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}><ArrowLeft size={16} /></Link>
-      <h1 className="min-w-0 truncate text-sm font-semibold" title={path ?? name}>{name}{dirty && <span className="ml-1 text-accent" title="Unsaved changes" aria-label="unsaved changes">●</span>}</h1>
+      <div role="heading" aria-level={1} className="min-w-0 truncate text-sm font-semibold" title={path ?? name}>{name}{dirty && <span className="ml-1 text-accent" title="Unsaved changes" aria-label="unsaved changes">●</span>}</div>
     </div>
   );
 }
