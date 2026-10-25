@@ -73,9 +73,10 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .docs-editor .find-hit.find-current { background: hsl(var(--accent) / 0.60); outline: 2px solid hsl(var(--accent)); }
 
 /* dialog backdrops fade in (the engine's motion module has tk-pop for the window itself) */
+.page-fade { animation: tk-fade 160ms ease-out backwards !important; }
 .tk-fade { animation: tk-fade 160ms ease-out backwards; }
 @keyframes tk-fade { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .tk-fade { animation-duration: 1ms !important; } }
+@media (prefers-reduced-motion: reduce) { .tk-fade, .page-fade { animation-duration: 1ms !important; } }
 
 /* ---- pictures (editor/ImageView.tsx), document tabs (editor/tabs.ts), the highlighted line ---- */
 .docs-editor .img-view { display: inline-block; position: relative; line-height: 0; vertical-align: bottom; max-width: 100%; }
@@ -158,4 +159,4 @@ html, body { overflow-x: hidden; overscroll-behavior-x: none; }
 .slide-thumb.drop { border-color: hsl(var(--accent) / 0.5); border-style: dashed; }
 
 /* Settings > Documents > Animations off */
-html[data-motion="off"] .tk-arrive, html[data-motion="off"] .tk-swap, html[data-motion="off"] .tk-slide-in, html[data-motion="off"] .tk-pop, html[data-motion="off"] .tk-expand, html[data-motion="off"] .tk-fade, html[data-motion="off"] .bt-page, html[data-motion="off"] .docs-canvas { animation: none !important; transition: none !important; }
+html[data-motion="off"] .tk-arrive, html[data-motion="off"] .tk-swap, html[data-motion="off"] .tk-slide-in, html[data-motion="off"] .tk-pop, html[data-motion="off"] .tk-expand, html[data-motion="off"] .tk-fade, html[data-motion="off"] .page-fade, html[data-motion="off"] .bt-page, html[data-motion="off"] .docs-canvas { animation: none !important; transition: none !important; }

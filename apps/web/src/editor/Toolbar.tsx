@@ -179,7 +179,7 @@ export function Toolbar({ editor, width, setWidth, marginL, marginR, setMargins,
       </Popover>
         </>,
       ]} pinned={
-      <Popover label="Text width and margins (Ctrl+Alt+W)" openKey={widthKey} trigger={<span className="flex items-center gap-1 text-sm"><MoveHorizontal size={16} />Width</span>}>
+      <Popover align="right" label="Text width and margins (Ctrl+Alt+W)" openKey={widthKey} trigger={<span className="flex items-center gap-1 text-sm"><MoveHorizontal size={16} />Width</span>}>
         {() => (
           <div className="w-64 space-y-3">
             {([['Text width', width, 480, 1200, 20, (v: number) => setWidth(v)], ['Left margin', marginL, 0, 300, 10, (v: number) => setMargins(v, marginR)], ['Right margin', marginR, 0, 300, 10, (v: number) => setMargins(marginL, v)]] as const).map(([l, v, lo, hi, st, set]) => (

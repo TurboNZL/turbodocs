@@ -261,6 +261,7 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
 
   interface ListItem { level: number; kind: 'bullet' | 'ordered'; numId: string; para: Json }
   type Block = Json | { list: ListItem };
+  const SECTION_END = '__sectionEnd';
 
   function paragraph(p: El): Block {
     const pPr = kid(p, 'pPr');
@@ -355,13 +356,35 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
     return { type: 'table', content: rows.filter((r) => r.content!.length) };
   }
 
+  /**
+   * Google Docs exports each document tab as a section ending in a section break. A file with several sections and none of our own tab markers becomes tabs:
+   * a title paragraph (Google does not export the tab's name, so "Tab 1", "Tab 2"...) starts each section, in the same shape as a tab added in the editor.
+   */
+  function sectionsToTabs(all: Json[]): Json[] {
+    const ends = all.filter((b) => b.type === SECTION_END).length;
+    const flat = all.filter((b) => b.type !== SECTION_END);
+    const hasOwn = flat.some((b) => b.attrs?.tab);
+    if (hasOwn || !ends) return flat;
+    const out: Json[] = [];
+    let n = 0, fresh = true;
+    for (const b of all) {
+      if (b.type === SECTION_END) { fresh = true; continue; }
+      if (fresh) { n++; out.push({ type: 'paragraph', attrs: { tab: `tdtab_${n}` }, content: [{ type: 'text', text: `Tab ${n}` }] }); fresh = false; }
+      out.push(b);
+    }
+    return out;
+  }
+
   function blocks(container: El): Json[] {
     const out: Json[] = [];
     let pending: ListItem[] = [];
     const flush = () => { if (pending.length) { out.push(...lists(pending)); pending = []; } };
     const visit = (parent: El) => {
       for (const c of kids(parent)) {
-        if (c.localName === 'p') { const b = paragraph(c); if ('list' in b) pending.push(b.list); else { flush(); out.push(b); } }
+        if (c.localName === 'p') {
+          const b = paragraph(c); if ('list' in b) pending.push(b.list); else { flush(); out.push(b); }
+          if (container === body && kid(kid(c, 'pPr'), 'sectPr')) { flush(); out.push({ type: SECTION_END }); }
+        }
         else if (c.localName === 'tbl') { flush(); out.push(table(c)); }
         else if (c.localName === 'sdt') visit(kid(c, 'sdtContent') ?? c);
       }
@@ -372,7 +395,7 @@ export async function importDocx(bytes: Uint8Array | ArrayBuffer): Promise<Impor
     return out;
   }
 
-  const content = blocks(body);
+  const content = sectionsToTabs(blocks(body));
   if (content[content.length - 1].type === 'table') content.push({ type: 'paragraph' });
   return { doc: { type: 'doc', content }, warnings: [...warnings], styles: resolveStyles() };
 

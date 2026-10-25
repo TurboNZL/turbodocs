@@ -123,3 +123,17 @@ describe.runIf(process.env.EXPORT_DIR)('external check', () => {
     }
   });
 });
+
+describe('a Google Docs export with several tabs', () => {
+  it('turns each section into a document tab and keeps them through a save', async () => {
+    const { doc, warnings } = await importDocx(fixture('google-docs-tabs.docx'));
+    expect(() => valid(doc)).not.toThrow();
+    expect(warnings).toEqual([]);
+    const marks = (d: Json) => (d.content ?? []).filter((n) => n.attrs?.tab).map(text);
+    expect(marks(doc)).toEqual(['Tab 1', 'Tab 2', 'Tab 3']);
+    expect(find(doc, 'table')).toHaveLength(3);
+    const saved = await exportDocx(doc, (await importDocx(fixture('google-docs-tabs.docx'))).styles);
+    const again = await importDocx(saved.bytes);
+    expect(marks(again.doc)).toEqual(['Tab 1', 'Tab 2', 'Tab 3']);
+  });
+});

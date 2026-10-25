@@ -10,7 +10,7 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ImageView } from './ImageView.tsx';
 import { DocTabs } from './tabs.ts';
 import { Typing, type TypingOptions } from './typing.ts';
-import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
+import { Table, TableCell, TableHeader, TableRow, TableView } from '@tiptap/extension-table';
 
 /** Title and Subtitle are paragraphs with a `pstyle`; headings are real heading nodes. Line height is per paragraph. */
 const ParagraphStyle = Extension.create({
@@ -39,12 +39,39 @@ const ParagraphStyle = Extension.create({
   },
 });
 
+/** Black or white, whichever reads on a cell fill (any CSS colour the editor stores: #rrggbb or rgb()). */
+function inkOn(fill: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(fill.trim());
+  const rgb = m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : (fill.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number);
+  if (rgb.length < 3) return 'inherit';
+  const lin = rgb.map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2] > 0.4 ? '#111111' : '#f2f2f2';
+}
+
+/**
+ * A table keeps the proportions of its columns but never grows wider than the text column: a file (Google's pageless export) can say 1470 px while the canvas
+ * is 760. The columns are written as percentages of the file's total, so a table narrower than the canvas keeps its own width and a wider one shrinks.
+ */
+class FitTableView extends TableView {
+  constructor(...a: ConstructorParameters<typeof TableView>) { super(...a); this.fit(); }
+  update(node: Parameters<TableView['update']>[0]) { const ok = super.update(node); if (ok) this.fit(); return ok; }
+  private fit() {
+    const cols = [...this.colgroup.children] as HTMLElement[];
+    const px = cols.map((c) => parseFloat(c.style.width));
+    const total = px.reduce((a, b) => a + b, 0);
+    if (!cols.length || px.some((v) => !(v > 0))) return;
+    cols.forEach((c, i) => { c.style.width = `${(px[i] / total) * 100}%`; });
+    this.table.style.width = `${total}px`; this.table.style.minWidth = ''; this.table.style.maxWidth = '100%';
+  }
+}
+
 /** A table cell can be coloured (Format > Table > Cell colour in the first TurboDocs). */
 const cellColour = {
   addAttributes() {
     return {
       ...(this as unknown as { parent?: () => Record<string, unknown> }).parent?.(),
-      backgroundColor: { default: null, parseHTML: (el: HTMLElement) => el.style.backgroundColor || null, renderHTML: (a: Record<string, unknown>) => (a.backgroundColor ? { style: `background-color:${a.backgroundColor}` } : {}) },
+      // a coloured cell also fixes its own text colour (readable on that fill), or a dark theme's light text lands on a white cell; a run's own colour still wins
+      backgroundColor: { default: null, parseHTML: (el: HTMLElement) => el.style.backgroundColor || null, renderHTML: (a: Record<string, unknown>) => (a.backgroundColor ? { style: `background-color:${a.backgroundColor};color:${inkOn(String(a.backgroundColor))}` } : {}) },
     };
   },
 };
@@ -73,7 +100,7 @@ export const makeExtensions = (typing: TypingOptions) => [
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
   SizedImage.configure({ inline: true, allowBase64: true }),
-  Table.configure({ resizable: true }),
+  Table.configure({ resizable: true, View: FitTableView }),
   TableRow, TableHeader.extend(cellColour), TableCell.extend(cellColour),
   ParagraphStyle, Search, DocTabs, Typing.configure(typing),
 ];
