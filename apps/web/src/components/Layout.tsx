@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Settings } from 'lucide-react';
 import { WindowFrame } from './WindowFrame.tsx';
@@ -45,6 +45,10 @@ export function Layout() {
   const [layout] = usePref('ui.layout', 'side');
   const [focus] = usePref('ui.focusEditing', 'on');
   const hideNav = focus === 'on' && pathname.startsWith('/edit'); // a document gets the whole window; its header has the way back
+  // opening or closing a document swaps a light page for a heavy editor: building it stalls the page animation, so the editor would appear at the animation's start
+  // offset and snap into place. Crossing between a document and the rest only fades; the class is fixed per route (a re-render must not restart it).
+  const nav = useRef({ path: pathname, crossing: false });
+  if (nav.current.path !== pathname) nav.current = { path: pathname, crossing: pathname.startsWith('/edit') !== nav.current.path.startsWith('/edit') };
   const link = (n: (typeof NAV)[number], showLabel: boolean) => (
     <NavLink key={n.to} to={n.to} end={n.end} title={n.label} aria-label={n.label} onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }} className={({ isActive }) => cn('bt-nav flex items-center gap-2 px-3 py-2 text-sm', isActive && 'font-medium')}>
       {({ isActive }) => <span className="flex items-center gap-2" aria-current={isActive ? 'page' : undefined}><n.icon size={16} />{showLabel && n.label}</span>}
@@ -63,7 +67,7 @@ export function Layout() {
             {NAV.map((n) => link(n, layout !== 'rail'))}
           </nav>
         )}
-        <main key={pathname} className="bt-page tk-swap min-w-0 flex-1 overflow-y-auto"><Outlet /></main>
+        <main key={pathname} className={cn('bt-page min-w-0 flex-1 overflow-y-auto', nav.current.crossing ? 'page-fade' : 'tk-swap')}><Outlet /></main>
       </div>
     </div>
   );
